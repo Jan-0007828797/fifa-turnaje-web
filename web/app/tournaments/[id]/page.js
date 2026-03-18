@@ -27,6 +27,39 @@ function isMatchReady(form) {
   return hasTeams && hasScore && hasOvertime;
 }
 
+function groupTeamsByLabel(items, makeLabel) {
+  const grouped = new Map();
+  for (const item of items) {
+    const label = makeLabel(item);
+    if (!grouped.has(label)) grouped.set(label, []);
+    grouped.get(label).push(item);
+  }
+  return Array.from(grouped.entries());
+}
+
+function TeamSelect({ value, teams, teamMode, onModeChange, onChange, disabled }) {
+  const filteredTeams = teams.filter((team) => teamMode === 'national' ? team.type === 'national' : team.type !== 'national');
+  const groupedTeams = groupTeamsByLabel(filteredTeams, (team) => teamMode === 'national' ? team.country : `${team.country} · ${team.competition}`);
+
+  return (
+    <>
+      <div className="small" style={{marginTop:8}}>Zdroj výběru</div>
+      <div className="segmentedSwitch" style={{marginTop:6}}>
+        <button type="button" className={`segmentedBtn ${teamMode === 'club' ? 'active' : ''}`} onClick={() => onModeChange('club')} disabled={disabled}>Ligy</button>
+        <button type="button" className={`segmentedBtn ${teamMode === 'national' ? 'active' : ''}`} onClick={() => onModeChange('national')} disabled={disabled}>International</button>
+      </div>
+      <select disabled={disabled} className="select" value={value} onChange={(e)=>onChange(e.target.value)}>
+        <option value="">{teamMode === 'national' ? 'Vyber národní tým' : 'Vyber klub z nejvyšší soutěže'}</option>
+        {groupedTeams.map(([label, options]) => (
+          <optgroup key={label} label={label}>
+            {options.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+          </optgroup>
+        ))}
+      </select>
+    </>
+  );
+}
+
 function MatchCard({ match, teams, onSaved, readOnly }) {
   const [form, setForm] = useState({
     scoreA: match.scoreA ?? '',
@@ -35,7 +68,9 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
     auctionB: match.auctionB ?? 0,
     footballTeamAId: match.footballTeamAId || '',
     footballTeamBId: match.footballTeamBId || '',
-    overtimeWinner: match.overtimeWinner || ''
+    overtimeWinner: match.overtimeWinner || '',
+    teamModeA: match.footballTeamA?.type === 'national' ? 'national' : 'club',
+    teamModeB: match.footballTeamB?.type === 'national' ? 'national' : 'club'
   });
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(() => !isMatchReady({
@@ -45,7 +80,9 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
     auctionB: match.auctionB ?? 0,
     footballTeamAId: match.footballTeamAId || '',
     footballTeamBId: match.footballTeamBId || '',
-    overtimeWinner: match.overtimeWinner || ''
+    overtimeWinner: match.overtimeWinner || '',
+    teamModeA: match.footballTeamA?.type === 'national' ? 'national' : 'club',
+    teamModeB: match.footballTeamB?.type === 'national' ? 'national' : 'club'
   }));
   const activeA = `${match.teamAPlayer1.name} + ${match.teamAPlayer2.name}`;
   const activeB = `${match.teamBPlayer1.name} + ${match.teamBPlayer2.name}`;
@@ -59,7 +96,9 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
       auctionB: match.auctionB ?? 0,
       footballTeamAId: match.footballTeamAId || '',
       footballTeamBId: match.footballTeamBId || '',
-      overtimeWinner: match.overtimeWinner || ''
+      overtimeWinner: match.overtimeWinner || '',
+      teamModeA: match.footballTeamA?.type === 'national' ? 'national' : 'club',
+      teamModeB: match.footballTeamB?.type === 'national' ? 'national' : 'club'
     };
     setForm(nextForm);
     setExpanded(!isMatchReady(nextForm));
@@ -68,9 +107,12 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
   async function save() {
     setBusy(true);
     try {
+      const payload = { ...form };
+      delete payload.teamModeA;
+      delete payload.teamModeB;
       const result = await api(`/api/matches/${match.id}`, {
         method: 'PATCH',
-        body: JSON.stringify(form)
+        body: JSON.stringify(payload)
       });
       onSaved(result);
       if (isMatchReady(form)) setExpanded(false);
@@ -120,20 +162,28 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
         <div className="teamBlock">
           <div style={{fontWeight:800}}>Tým A</div>
           <div className="small">{activeA}</div>
-          <select disabled={readOnly} className="select" value={form.footballTeamAId} onChange={(e)=>setForm((x)=>({...x, footballTeamAId:e.target.value}))}>
-            <option value="">Vyber FC tým</option>
-            {teams.map((team)=><option key={team.id} value={team.id}>{team.name} · {team.country}</option>)}
-          </select>
+          <TeamSelect
+            disabled={readOnly}
+            value={form.footballTeamAId}
+            teams={teams}
+            teamMode={form.teamModeA}
+            onModeChange={(mode)=>setForm((x)=>({...x, teamModeA: mode, footballTeamAId: ''}))}
+            onChange={(value)=>setForm((x)=>({...x, footballTeamAId:value}))}
+          />
           <input disabled={readOnly} className="input" type="number" value={form.auctionA} onChange={(e)=>setForm((x)=>({...x, auctionA:e.target.value}))} placeholder="Losovačka Tým A" />
         </div>
 
         <div className="teamBlock">
           <div style={{fontWeight:800}}>Tým B</div>
           <div className="small">{activeB}</div>
-          <select disabled={readOnly} className="select" value={form.footballTeamBId} onChange={(e)=>setForm((x)=>({...x, footballTeamBId:e.target.value}))}>
-            <option value="">Vyber FC tým</option>
-            {teams.map((team)=><option key={team.id} value={team.id}>{team.name} · {team.country}</option>)}
-          </select>
+          <TeamSelect
+            disabled={readOnly}
+            value={form.footballTeamBId}
+            teams={teams}
+            teamMode={form.teamModeB}
+            onModeChange={(mode)=>setForm((x)=>({...x, teamModeB: mode, footballTeamBId: ''}))}
+            onChange={(value)=>setForm((x)=>({...x, footballTeamBId:value}))}
+          />
           <input disabled={readOnly} className="input" type="number" value={form.auctionB} onChange={(e)=>setForm((x)=>({...x, auctionB:e.target.value}))} placeholder="Losovačka Tým B" />
         </div>
       </div>

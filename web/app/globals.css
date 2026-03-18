@@ -120,3 +120,7 @@ strong.top { color: var(--brand); }
   .logoutFloating { top: 12px; right: 12px; }
   .adminActionRow { flex-direction: column; }
 }
+
+.segmentedSwitch { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; }
+.segmentedBtn { min-height: 40px; border-radius: 12px; border:1px solid var(--line); background: transparent; color: var(--muted); font-weight:700; }
+.segmentedBtn.active { background: rgba(52,211,153,0.18); color: var(--brand); border-color: rgba(52,211,153,0.36); }

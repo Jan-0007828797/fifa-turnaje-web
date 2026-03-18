@@ -15,7 +15,7 @@ function moneySigned(value) {
 
 function LoginCard({ onLoggedIn }) {
   const [username, setUsername] = useState('Nojby');
-  const [password, setPassword] = useState('Nojby1');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -39,19 +39,19 @@ function LoginCard({ onLoggedIn }) {
 
   function handleUserChange(value) {
     setUsername(value);
-    setPassword(value === 'Nojby' ? 'Nojby1' : value);
+    setPassword(value === 'Nojby' ? '' : value);
   }
 
   return (
     <div className="card pad" style={{maxWidth: 480, margin:'0 auto'}}>
       <div className="badge">FIFA turnaje</div>
       <div className="title" style={{marginTop: 10}}>Přihlášení</div>
-      <div className="subtitle">Login je přes jméno. Heslo pro Nojby je <strong>Nojby1</strong>, ostatní hráči mají stejné heslo jako login.</div>
+      <div className="subtitle">Login je přes jméno. U hráče <strong>Nojby</strong> se heslo nepředvyplňuje a musí ho zadat ručně. Ostatní hráči mají stejné heslo jako login.</div>
       <form className="col" style={{marginTop: 18}} onSubmit={submit}>
         <select className="select" value={username} onChange={(e)=>handleUserChange(e.target.value)}>
           {defaultNames.map((name)=><option key={name} value={name}>{name}</option>)}
         </select>
-        <input className="input" value={password} onChange={(e)=>setPassword(e.target.value)} />
+        <input className="input" type="password" value={password} placeholder={username === 'Nojby' ? 'Zadej heslo pro Nojby' : 'Heslo'} onChange={(e)=>setPassword(e.target.value)} />
         {error ? <div className="small" style={{color:'var(--danger)'}}>{error}</div> : null}
         <button className="btn primary" disabled={busy}>{busy ? 'Přihlašuji…' : 'Přihlásit'}</button>
       </form>
