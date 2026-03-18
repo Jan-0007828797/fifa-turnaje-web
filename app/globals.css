@@ -89,3 +89,34 @@ strong.top { color: var(--brand); }
 .topTabBar { display:flex; gap:10px; flex-wrap:wrap; }
 .topTabBar .tab { min-height: 46px; font-weight: 700; }
 .matchSummaryLine { display:flex; flex-wrap:wrap; gap:10px; }
+
+.bottomNav3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.logoutFloating {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 50;
+  width: auto;
+  padding: 0 16px;
+  backdrop-filter: blur(12px);
+}
+.statusBadge.status-closed { background: rgba(59,130,246,0.14); color: #60a5fa; }
+.statusBadge.status-in_progress { background: rgba(250,204,21,0.14); color: #facc15; }
+.statusBadge.status-draft { background: rgba(148,163,184,0.16); color: var(--muted); }
+.statusBadge.status-archived { background: rgba(251,113,133,0.12); color: var(--danger); }
+.statsHeroTag {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  font-weight: 800;
+}
+.statsBulletList { display: grid; gap: 10px; }
+.highlightRow { background: rgba(52,211,153,0.08); }
+.adminPanel { border-color: rgba(52,211,153,0.32); }
+.adminActionRow { display:flex; gap:12px; flex-wrap:wrap; }
+@media (max-width: 720px) {
+  .bottomNav3 { grid-template-columns: 1fr; }
+  .logoutFloating { top: 12px; right: 12px; }
+  .adminActionRow { flex-direction: column; }
+}

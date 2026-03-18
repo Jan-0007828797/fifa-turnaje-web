@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { io } from 'socket.io-client';
-import { api, getUser } from '@/lib/api';
+import { api, clearSession, getUser } from '@/lib/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -27,7 +27,7 @@ function isMatchReady(form) {
   return hasTeams && hasScore && hasOvertime;
 }
 
-function MatchCard({ match, teams, onSaved }) {
+function MatchCard({ match, teams, onSaved, readOnly }) {
   const [form, setForm] = useState({
     scoreA: match.scoreA ?? '',
     scoreB: match.scoreB ?? '',
@@ -112,7 +112,7 @@ function MatchCard({ match, teams, onSaved }) {
         </div>
         <div className="row matchActions">
           {readyToCollapse ? <button className="btn ghost compactAction" onClick={() => setExpanded(false)}>Skrýt detail</button> : null}
-          <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Ukládám…' : 'Uložit zápas'}</button>
+          {!readOnly ? <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Ukládám…' : 'Uložit zápas'}</button> : null}
         </div>
       </div>
 
@@ -120,38 +120,96 @@ function MatchCard({ match, teams, onSaved }) {
         <div className="teamBlock">
           <div style={{fontWeight:800}}>Tým A</div>
           <div className="small">{activeA}</div>
-          <select className="select" value={form.footballTeamAId} onChange={(e)=>setForm((x)=>({...x, footballTeamAId:e.target.value}))}>
+          <select disabled={readOnly} className="select" value={form.footballTeamAId} onChange={(e)=>setForm((x)=>({...x, footballTeamAId:e.target.value}))}>
             <option value="">Vyber FC tým</option>
             {teams.map((team)=><option key={team.id} value={team.id}>{team.name} · {team.country}</option>)}
           </select>
-          <input className="input" type="number" value={form.auctionA} onChange={(e)=>setForm((x)=>({...x, auctionA:e.target.value}))} placeholder="Losovačka Tým A" />
+          <input disabled={readOnly} className="input" type="number" value={form.auctionA} onChange={(e)=>setForm((x)=>({...x, auctionA:e.target.value}))} placeholder="Losovačka Tým A" />
         </div>
 
         <div className="teamBlock">
           <div style={{fontWeight:800}}>Tým B</div>
           <div className="small">{activeB}</div>
-          <select className="select" value={form.footballTeamBId} onChange={(e)=>setForm((x)=>({...x, footballTeamBId:e.target.value}))}>
+          <select disabled={readOnly} className="select" value={form.footballTeamBId} onChange={(e)=>setForm((x)=>({...x, footballTeamBId:e.target.value}))}>
             <option value="">Vyber FC tým</option>
             {teams.map((team)=><option key={team.id} value={team.id}>{team.name} · {team.country}</option>)}
           </select>
-          <input className="input" type="number" value={form.auctionB} onChange={(e)=>setForm((x)=>({...x, auctionB:e.target.value}))} placeholder="Losovačka Tým B" />
+          <input disabled={readOnly} className="input" type="number" value={form.auctionB} onChange={(e)=>setForm((x)=>({...x, auctionB:e.target.value}))} placeholder="Losovačka Tým B" />
         </div>
       </div>
 
       <div className="teamBlock">
         <div style={{fontWeight:800}}>Výsledek</div>
         <div className="scoreRow">
-          <div><div className="small">Skóre A</div><input className="input" type="number" value={form.scoreA} onChange={(e)=>setForm((x)=>({...x, scoreA:e.target.value}))} /></div>
-          <div><div className="small">Skóre B</div><input className="input" type="number" value={form.scoreB} onChange={(e)=>setForm((x)=>({...x, scoreB:e.target.value}))} /></div>
+          <div><div className="small">Skóre A</div><input disabled={readOnly} className="input" type="number" value={form.scoreA} onChange={(e)=>setForm((x)=>({...x, scoreA:e.target.value}))} /></div>
+          <div><div className="small">Skóre B</div><input disabled={readOnly} className="input" type="number" value={form.scoreB} onChange={(e)=>setForm((x)=>({...x, scoreB:e.target.value}))} /></div>
         </div>
         {draw ? (
-          <select className="select" value={form.overtimeWinner} onChange={(e)=>setForm((x)=>({...x, overtimeWinner:e.target.value}))}>
+          <select disabled={readOnly} className="select" value={form.overtimeWinner} onChange={(e)=>setForm((x)=>({...x, overtimeWinner:e.target.value}))}>
             <option value="">Vyber vítěze prodloužení</option>
             <option value="A">Tým A</option>
             <option value="B">Tým B</option>
           </select>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function AdminActions({ tournament, onStatusChange, onDeleted, busy }) {
+  const [deleteChoiceOpen, setDeleteChoiceOpen] = useState(false);
+
+  async function closeTournament() {
+    if (!confirm('Uzavřít turnaj? Po uzavření se propíše do Stats FC2026 a nebude ho možné dále upravovat.')) return;
+    try {
+      const result = await api(`/api/tournaments/${tournament.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'closed' })
+      });
+      onStatusChange(result);
+      alert('Turnaj byl uzavřen a propsal se do statistik.');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function archiveTournament() {
+    if (!confirm('Archivovat turnaj? Zmizí ze seznamu aktivních turnajů a nepropíše se do statistik.')) return;
+    try {
+      await api(`/api/tournaments/${tournament.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'archived' })
+      });
+      onDeleted();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function deleteTournament() {
+    if (!confirm('Smazat turnaj natrvalo? Tuto akci nelze vrátit.')) return;
+    try {
+      await api(`/api/tournaments/${tournament.id}`, { method: 'DELETE' });
+      onDeleted();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  return (
+    <div className="adminPanel card pad">
+      <div style={{fontSize:20, fontWeight:800}}>Správa turnaje</div>
+      <div className="small" style={{marginTop:4}}>Tyto akce může provést pouze Nojby.</div>
+      <div className="adminActionRow" style={{marginTop:12}}>
+        <button className="btn primary" disabled={busy || tournament.status === 'closed'} onClick={closeTournament}>Uzavřít turnaj</button>
+        <button className="btn danger" disabled={busy} onClick={() => setDeleteChoiceOpen((s) => !s)}>{deleteChoiceOpen ? 'Skrýt volby delete' : 'Delete / archivace'}</button>
+      </div>
+      {deleteChoiceOpen ? (
+        <div className="grid grid-2" style={{marginTop:12}}>
+          <button className="btn ghost" onClick={archiveTournament}>Archivovat turnaj</button>
+          <button className="btn danger" onClick={deleteTournament}>Smazat natrvalo</button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -226,6 +284,8 @@ export default function TournamentDetail({ params }) {
       });
       setTournament(result);
       await loadAudit();
+    } catch (err) {
+      alert(err.message);
     } finally {
       setSaveBusy(false);
     }
@@ -241,12 +301,22 @@ export default function TournamentDetail({ params }) {
     return <main className="page"><div className="shell"><div className="notice">Načítám turnaj…</div></div></main>;
   }
 
+  const tabs = [
+    { key: 'matches', label: 'Zápasy' },
+    { key: 'standings', label: 'Tabulka' },
+    { key: 'finance', label: 'Finance' },
+    ...(user.name === 'Nojby' ? [{ key: 'audit', label: 'Audit' }] : [])
+  ];
+  const readOnly = tournament.status === 'closed';
+
   return (
     <main className="page">
+      <button className="btn ghost logoutFloating" onClick={() => { clearSession(); location.href = '/'; }}>Odhlásit</button>
+
       <div className="shell col">
-        <div className="row" style={{justifyContent:'space-between'}}>
+        <div className="row" style={{justifyContent:'space-between', paddingRight:'110px'}}>
           <Link href="/" className="btn ghost" style={{width:'auto',padding:'0 14px'}}>← Zpět</Link>
-          <span className="badge">{syncLabel}</span>
+          <span className={`badge statusBadge status-${tournament.status}`}>{syncLabel} • {tournament.status}</span>
         </div>
 
         <div className="card pad">
@@ -262,50 +332,67 @@ export default function TournamentDetail({ params }) {
           </div>
         </div>
 
+        <div className="topTabBar card">
+          {tabs.map((item) => (
+            <button key={item.key} className={`tab ${tab === item.key ? 'active' : ''}`} onClick={() => setTab(item.key)}>{item.label}</button>
+          ))}
+        </div>
+
         <div className="grid grid-3">
           {kpis.map((kpi) => <div key={kpi.label} className="kpi"><div className="label">{kpi.label}</div><div className="value">{kpi.value}</div></div>)}
         </div>
+
+        {readOnly ? <div className="notice">Turnaj je uzavřený. Výsledky jsou propsané do Stats FC2026 a údaje už nelze upravovat.</div> : null}
+
+        {user.name === 'Nojby' ? (
+          <AdminActions
+            tournament={tournament}
+            busy={saveBusy}
+            onStatusChange={(updated) => setTournament(updated)}
+            onDeleted={() => { location.href = '/'; }}
+          />
+        ) : null}
 
         {showParams ? (
           <div className="card pad collapsiblePanel">
             <div className="grid grid-2">
               <div>
                 <div className="small">Název turnaje</div>
-                <input className="input" value={tournament.name} onChange={(e)=>setTournament((t)=>({...t, name:e.target.value}))} />
+                <input disabled={readOnly} className="input" value={tournament.name} onChange={(e)=>setTournament((t)=>({...t, name:e.target.value}))} />
               </div>
               <div>
                 <div className="small">Buy-in na hráče</div>
-                <input className="input" type="number" value={tournament.buyIn} onChange={(e)=>setTournament((t)=>({...t, buyIn:e.target.value}))} />
+                <input disabled={readOnly} className="input" type="number" value={tournament.buyIn} onChange={(e)=>setTournament((t)=>({...t, buyIn:e.target.value}))} />
               </div>
             </div>
             <div className="grid grid-3" style={{marginTop:12}}>
               {tournament.players.slice().sort((a,b)=>a.slot.localeCompare(b.slot)).map((p) => (
                 <div key={p.id} className="teamBlock">
                   <div className="small">Slot {p.slot}</div>
-                  <input className="input" value={p.name} onChange={(e)=>setTournament((t)=>({...t, players: t.players.map((x)=>x.id===p.id?{...x, name:e.target.value}:x)}))} />
+                  <input disabled={readOnly} className="input" value={p.name} onChange={(e)=>setTournament((t)=>({...t, players: t.players.map((x)=>x.id===p.id?{...x, name:e.target.value}:x)}))} />
                 </div>
               ))}
             </div>
-            <div className="footerBar"><button className="btn primary" onClick={saveHeader} disabled={saveBusy}>{saveBusy ? 'Ukládám…' : 'Uložit parametry turnaje'}</button></div>
+            {!readOnly ? <div className="footerBar"><button className="btn primary" onClick={saveHeader} disabled={saveBusy}>{saveBusy ? 'Ukládám…' : 'Uložit parametry turnaje'}</button></div> : null}
           </div>
         ) : null}
 
         {tab === 'matches' ? (
           <>
             <div className="card pad">
-            <div style={{fontWeight:800, fontSize:20}}>Zápasy</div>
-            <div className="small" style={{marginTop:6}}>Vyplněný a uložený zápas se automaticky sbalí. Otevřeš ho přes tlačítko Detaily zápasu č. X.</div>
-          </div>
-          <div className="grid">
-            {tournament.matches.map((match) => (
-              <MatchCard key={match.id} match={match} teams={teams} onSaved={(data)=>setTournament(data)} />
-            ))}
-          </div>
+              <div style={{fontWeight:800, fontSize:20}}>Zápasy</div>
+              <div className="small" style={{marginTop:6}}>Vyplněný a uložený zápas se automaticky sbalí. Otevřeš ho přes tlačítko Detaily zápasu č. X.</div>
+            </div>
+            <div className="grid pageSectionBottomSpace">
+              {tournament.matches.map((match) => (
+                <MatchCard key={match.id} match={match} teams={teams} readOnly={readOnly} onSaved={(data)=>setTournament(data)} />
+              ))}
+            </div>
           </>
         ) : null}
 
         {tab === 'standings' ? (
-          <div className="tableWrap card">
+          <div className="tableWrap card pageSectionBottomSpace">
             <table>
               <thead><tr><th>Poř.</th><th>Hráč</th><th>Slot</th><th>Z</th><th>V</th><th>VP</th><th>PP</th><th>P</th><th>GF</th><th>GA</th><th>GD</th><th>Body</th></tr></thead>
               <tbody>
@@ -331,7 +418,7 @@ export default function TournamentDetail({ params }) {
         ) : null}
 
         {tab === 'finance' ? (
-          <div className="tableWrap card">
+          <div className="tableWrap card pageSectionBottomSpace">
             <table>
               <thead><tr><th>Hráč</th><th>Buy-in</th><th>Losovačky</th><th>Náklady</th><th>Umístění</th><th>Top střelec</th><th>Top obrana</th><th>Tržby</th><th>Netto</th></tr></thead>
               <tbody>
@@ -345,7 +432,7 @@ export default function TournamentDetail({ params }) {
                     <td>{money(row.topScorerPrize)}</td>
                     <td>{money(row.topDefensePrize)}</td>
                     <td>{money(row.totalRevenue)}</td>
-                    <td><strong className={row.net >= 0 ? 'top' : ''}>{money(row.net)}</strong></td>
+                    <td><strong className={row.net >= 0 ? 'top' : ''}>{row.net >= 0 ? '+' : '-'}{money(Math.abs(row.net))}</strong></td>
                   </tr>
                 ))}
               </tbody>
@@ -354,7 +441,7 @@ export default function TournamentDetail({ params }) {
         ) : null}
 
         {tab === 'audit' && user.name === 'Nojby' ? (
-          <div className="grid">
+          <div className="grid pageSectionBottomSpace">
             {audit.map((row) => (
               <div key={row.id} className="card pad">
                 <div className="row" style={{justifyContent:'space-between'}}>

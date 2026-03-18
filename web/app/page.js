@@ -7,9 +7,15 @@ import { api, clearSession, getUser, setSession } from '@/lib/api';
 const slots = ['A','B','C','D','E','F'];
 const defaultNames = ['Nojby','Mojda','Badger','Wowi','Gorky','Blazena'];
 
+function moneySigned(value) {
+  const amount = Number(value || 0);
+  const label = new Intl.NumberFormat('cs-CZ').format(Math.abs(amount));
+  return `${amount >= 0 ? '+' : '-'}${label}`;
+}
+
 function LoginCard({ onLoggedIn }) {
   const [username, setUsername] = useState('Nojby');
-  const [password, setPassword] = useState('Nojby');
+  const [password, setPassword] = useState('Nojby1');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -31,13 +37,18 @@ function LoginCard({ onLoggedIn }) {
     }
   }
 
+  function handleUserChange(value) {
+    setUsername(value);
+    setPassword(value === 'Nojby' ? 'Nojby1' : value);
+  }
+
   return (
     <div className="card pad" style={{maxWidth: 480, margin:'0 auto'}}>
       <div className="badge">FIFA turnaje</div>
       <div className="title" style={{marginTop: 10}}>Přihlášení</div>
-      <div className="subtitle">Login je přes jméno a stejné heslo. Např. Nojby / Nojby.</div>
+      <div className="subtitle">Login je přes jméno. Heslo pro Nojby je <strong>Nojby1</strong>, ostatní hráči mají stejné heslo jako login.</div>
       <form className="col" style={{marginTop: 18}} onSubmit={submit}>
-        <select className="select" value={username} onChange={(e)=>{setUsername(e.target.value); setPassword(e.target.value);}}>
+        <select className="select" value={username} onChange={(e)=>handleUserChange(e.target.value)}>
           {defaultNames.map((name)=><option key={name} value={name}>{name}</option>)}
         </select>
         <input className="input" value={password} onChange={(e)=>setPassword(e.target.value)} />
@@ -72,7 +83,7 @@ function NewTournamentCard({ onCreate }) {
   }
 
   return (
-    <div className="card pad">
+    <div className="card pad pageSectionBottomSpace">
       <div className="row" style={{justifyContent:'space-between', alignItems:'flex-start'}}>
         <div>
           <div style={{fontSize:22,fontWeight:800}}>Založit turnaj</div>
@@ -113,7 +124,7 @@ function TournamentList({ tournaments, loading }) {
                 <div className="small" style={{marginTop:6}}>{t.players.map((p)=>`${p.slot}: ${p.name}`).join(' • ')}</div>
               </div>
               <div className="col" style={{alignItems:'flex-end'}}>
-                <span className="badge">{t.status}</span>
+                <span className={`badge statusBadge status-${t.status}`}>{t.status}</span>
                 <span className="small">Buy-in {t.buyIn}</span>
               </div>
             </div>
@@ -125,10 +136,108 @@ function TournamentList({ tournaments, loading }) {
   );
 }
 
+function StatsCard({ stats, currentUser, loading }) {
+  const myStats = useMemo(() => stats.players.find((row) => row.name === currentUser?.name) || null, [stats, currentUser]);
+
+  return (
+    <div className="col pageSectionBottomSpace">
+      <div className="card pad">
+        <div className="row" style={{justifyContent:'space-between', alignItems:'flex-start'}}>
+          <div>
+            <div className="badge">Stats FC2026</div>
+            <div className="title" style={{marginTop:10, fontSize:'clamp(24px, 4vw, 36px)'}}>Přehled uzavřených turnajů</div>
+            <div className="subtitle">Sem se propisují jen uzavřené turnaje. Vidíš finance +/- i sportovní výsledky z předchozích turnajů.</div>
+          </div>
+          <div className="statsHeroTag">Uzavřené turnaje: {stats.overview.closedTournaments || 0}</div>
+        </div>
+        <div className="grid grid-3" style={{marginTop:16}}>
+          <div className="kpi"><div className="label">Uzavřené turnaje</div><div className="value">{stats.overview.closedTournaments || 0}</div></div>
+          <div className="kpi"><div className="label">Celkové skóre</div><div className="value">{stats.overview.totalGoals || 0}</div></div>
+          <div className="kpi"><div className="label">Finanční bilance</div><div className="value">{moneySigned(stats.overview.totalNet || 0)}</div></div>
+        </div>
+      </div>
+
+      <div className="grid grid-2">
+        <div className="card pad">
+          <div style={{fontSize:20,fontWeight:800}}>Moje bilance</div>
+          {loading ? <div className="notice" style={{marginTop:12}}>Načítám statistiky…</div> : (
+            <div className="grid grid-2" style={{marginTop:12}}>
+              <div className="kpi"><div className="label">Turnaje</div><div className="value">{myStats?.tournaments || 0}</div></div>
+              <div className="kpi"><div className="label">1. místa</div><div className="value">{myStats?.firstPlaces || 0}</div></div>
+              <div className="kpi"><div className="label">Góly</div><div className="value">{(myStats?.goalsFor || 0)}/{(myStats?.goalsAgainst || 0)}</div></div>
+              <div className="kpi"><div className="label">Finance +/-</div><div className="value">{moneySigned(myStats?.net || 0)}</div></div>
+            </div>
+          )}
+        </div>
+
+        <div className="card pad">
+          <div style={{fontSize:20,fontWeight:800}}>Co tu je</div>
+          <div className="statsBulletList" style={{marginTop:12}}>
+            <div className="notice">Sportovní výsledky: turnaje, umístění, góly, body, top střelec a top obrana.</div>
+            <div className="notice">Finance: čistý výsledek každého hráče jako příjmy minus buy-in a losovačka.</div>
+            <div className="notice">Historie: detail každého uzavřeného turnaje po hráčích níže v tabulce.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="tableWrap card">
+        <table>
+          <thead>
+            <tr><th>Hráč</th><th>Turnaje</th><th>1. místa</th><th>Podia</th><th>Body</th><th>Góly</th><th>Skóre +/-</th><th>Top střelec</th><th>Top obrana</th><th>Finance +/-</th></tr>
+          </thead>
+          <tbody>
+            {stats.players.map((row) => (
+              <tr key={row.name} className={row.name === currentUser?.name ? 'highlightRow' : ''}>
+                <td><strong className={row.name === currentUser?.name ? 'top' : ''}>{row.name}</strong></td>
+                <td>{row.tournaments}</td>
+                <td>{row.firstPlaces}</td>
+                <td>{row.podiums}</td>
+                <td>{row.points}</td>
+                <td>{row.goalsFor}:{row.goalsAgainst}</td>
+                <td>{row.goalDiff}</td>
+                <td>{row.topScorerAwards}</td>
+                <td>{row.topDefenseAwards}</td>
+                <td>{moneySigned(row.net)}</td>
+              </tr>
+            ))}
+            {!loading && stats.players.length === 0 ? <tr><td colSpan={10}><div className="notice">Zatím nejsou žádné uzavřené turnaje, takže statistiky jsou nulové.</div></td></tr> : null}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="tableWrap card">
+        <table>
+          <thead>
+            <tr><th>Turnaj</th><th>Hráč</th><th>Umístění</th><th>Body</th><th>Góly</th><th>Finanční výsledek</th><th>Aktualizace</th></tr>
+          </thead>
+          <tbody>
+            {stats.history.map((row, index) => (
+              <tr key={`${row.tournamentId}-${row.playerName}-${index}`}>
+                <td>{row.tournamentName}</td>
+                <td>{row.playerName}</td>
+                <td>{row.position}{row.sharedPosition ? '*' : ''}</td>
+                <td>{row.points}</td>
+                <td>{row.goalsFor}:{row.goalsAgainst}</td>
+                <td>{moneySigned(row.net)}</td>
+                <td>{new Date(row.updatedAt).toLocaleDateString('cs-CZ')}</td>
+              </tr>
+            ))}
+            {!loading && stats.history.length === 0 ? <tr><td colSpan={7}><div className="notice">Historie je zatím prázdná.</div></td></tr> : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function HomeBottomNav({ activeView, onChange }) {
   return (
     <div className="bottomNavWrap">
-      <div className="bottomNav card">
+      <div className="bottomNav bottomNav3 card">
+        <button className={`bottomNavItem ${activeView === 'stats' ? 'active' : ''}`} onClick={() => onChange('stats')}>
+          <span className="bottomNavTitle">Stats FC2026</span>
+          <span className="bottomNavHint">Uzavřené turnaje</span>
+        </button>
         <button className={`bottomNavItem ${activeView === 'create' ? 'active' : ''}`} onClick={() => onChange('create')}>
           <span className="bottomNavTitle">Založit turnaj</span>
           <span className="bottomNavHint">Nový turnaj</span>
@@ -142,11 +251,19 @@ function HomeBottomNav({ activeView, onChange }) {
   );
 }
 
+const emptyStats = {
+  overview: { closedTournaments: 0, totalNet: 0, totalGoals: 0, totalMatches: 0 },
+  players: [],
+  history: []
+};
+
 export default function HomePage() {
   const [user, setUser] = useState(null);
   const [tournaments, setTournaments] = useState([]);
+  const [stats, setStats] = useState(emptyStats);
   const [loading, setLoading] = useState(true);
-  const [activeView, setActiveView] = useState('visit');
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [activeView, setActiveView] = useState('stats');
 
   async function loadTournaments() {
     setLoading(true);
@@ -160,21 +277,33 @@ export default function HomePage() {
     }
   }
 
+  async function loadStats() {
+    setStatsLoading(true);
+    try {
+      const data = await api('/api/stats');
+      setStats(data);
+    } catch (err) {
+      console.error(err);
+      setStats(emptyStats);
+    } finally {
+      setStatsLoading(false);
+    }
+  }
+
   useEffect(() => {
     const current = getUser();
     if (current) {
       setUser(current);
       loadTournaments();
+      loadStats();
     }
   }, []);
-
-  const total = useMemo(() => tournaments.length, [tournaments]);
 
   if (!user) {
     return (
       <main className="page">
         <div className="shell" style={{paddingTop: 32}}>
-          <LoginCard onLoggedIn={(u) => { setUser(u); loadTournaments(); }} />
+          <LoginCard onLoggedIn={(u) => { setUser(u); loadTournaments(); loadStats(); }} />
         </div>
       </main>
     );
@@ -182,22 +311,10 @@ export default function HomePage() {
 
   return (
     <main className="page">
+      <button className="btn ghost logoutFloating" onClick={() => { clearSession(); location.reload(); }}>Odhlásit</button>
+
       <div className="shell col">
-        <div className="card pad">
-          <div className="row" style={{justifyContent:'space-between', alignItems:'flex-start'}}>
-            <div>
-              <div className="badge">Vercel + Railway</div>
-              <div className="title" style={{marginTop:10}}>FIFA turnaje</div>
-              <div className="subtitle">Přihlášený: <strong>{user.name}</strong>. Všichni vidí všechny turnaje. Audit je jen pro Nojby.</div>
-            </div>
-            <button className="btn ghost" onClick={() => { clearSession(); location.reload(); }}>Odhlásit</button>
-          </div>
-          <div className="grid grid-3" style={{marginTop:16}}>
-            <div className="kpi"><div className="label">Turnaje</div><div className="value">{total}</div></div>
-            <div className="kpi"><div className="label">Formát</div><div className="value">6 hráčů</div></div>
-            <div className="kpi"><div className="label">Sdílení</div><div className="value">Živě</div></div>
-          </div>
-        </div>
+        {activeView === 'stats' ? <StatsCard stats={stats} currentUser={user} loading={statsLoading} /> : null}
 
         {activeView === 'create' ? (
           <NewTournamentCard onCreate={(created) => {
