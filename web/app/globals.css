@@ -124,3 +124,23 @@ strong.top { color: var(--brand); }
 .segmentedSwitch { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; }
 .segmentedBtn { min-height: 40px; border-radius: 12px; border:1px solid var(--line); background: transparent; color: var(--muted); font-weight:700; }
 .segmentedBtn.active { background: rgba(52,211,153,0.18); color: var(--brand); border-color: rgba(52,211,153,0.36); }
+
+
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.lockedMatchCard {
+  opacity: 0.84;
+  border-style: dashed;
+}
+
+.teamBlock .select,
+.teamBlock .input {
+  min-height: 48px;
+}

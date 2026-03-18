@@ -27,36 +27,50 @@ function isMatchReady(form) {
   return hasTeams && hasScore && hasOvertime;
 }
 
-function groupTeamsByLabel(items, makeLabel) {
-  const grouped = new Map();
-  for (const item of items) {
-    const label = makeLabel(item);
-    if (!grouped.has(label)) grouped.set(label, []);
-    grouped.get(label).push(item);
-  }
-  return Array.from(grouped.entries());
+function getCompetitionKey(team) {
+  return team?.type === 'national' ? 'International' : `${team?.country} · ${team?.competition}`;
 }
 
-function TeamSelect({ value, teams, teamMode, onModeChange, onChange, disabled }) {
-  const filteredTeams = teams.filter((team) => teamMode === 'national' ? team.type === 'national' : team.type !== 'national');
-  const groupedTeams = groupTeamsByLabel(filteredTeams, (team) => teamMode === 'national' ? team.country : `${team.country} · ${team.competition}`);
+function getCompetitionChoices(teams) {
+  const nationals = teams
+    .filter((team) => team.type === 'national')
+    .map((team) => ({ key: 'International', label: 'International', sortLabel: '' }));
+
+  const leagues = Array.from(new Map(
+    teams
+      .filter((team) => team.type !== 'national')
+      .map((team) => {
+        const key = `${team.country} · ${team.competition}`;
+        return [key, { key, label: key, sortLabel: key.toLocaleLowerCase('cs') }];
+      })
+  ).values()).sort((a, b) => a.sortLabel.localeCompare(b.sortLabel, 'cs'));
+
+  return nationals.length ? [nationals[0], ...leagues] : leagues;
+}
+
+function TeamSelect({ value, teams, competitionKey, onCompetitionChange, onChange, disabled }) {
+  const competitionChoices = getCompetitionChoices(teams);
+  const activeCompetition = competitionKey || competitionChoices[0]?.key || '';
+  const filteredTeams = teams
+    .filter((team) => activeCompetition === 'International' ? team.type === 'national' : `${team.country} · ${team.competition}` === activeCompetition)
+    .sort((a, b) => a.name.localeCompare(b.name, 'cs'));
 
   return (
-    <>
-      <div className="small" style={{marginTop:8}}>Zdroj výběru</div>
-      <div className="segmentedSwitch" style={{marginTop:6}}>
-        <button type="button" className={`segmentedBtn ${teamMode === 'club' ? 'active' : ''}`} onClick={() => onModeChange('club')} disabled={disabled}>Ligy</button>
-        <button type="button" className={`segmentedBtn ${teamMode === 'national' ? 'active' : ''}`} onClick={() => onModeChange('national')} disabled={disabled}>International</button>
+    <div className="col" style={{gap:10, marginTop:8}}>
+      <div>
+        <div className="fieldLabel">Soutěž / výběr</div>
+        <select disabled={disabled} className="select" value={activeCompetition} onChange={(e)=>onCompetitionChange(e.target.value)}>
+          {competitionChoices.map((choice) => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
+        </select>
       </div>
-      <select disabled={disabled} className="select" value={value} onChange={(e)=>onChange(e.target.value)}>
-        <option value="">{teamMode === 'national' ? 'Vyber národní tým' : 'Vyber klub z nejvyšší soutěže'}</option>
-        {groupedTeams.map(([label, options]) => (
-          <optgroup key={label} label={label}>
-            {options.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-          </optgroup>
-        ))}
-      </select>
-    </>
+      <div>
+        <div className="fieldLabel">Tým</div>
+        <select disabled={disabled} className="select" value={value} onChange={(e)=>onChange(e.target.value)}>
+          <option value="">{activeCompetition === 'International' ? 'Vyber národní tým' : 'Vyber tým z dané soutěže'}</option>
+          {filteredTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+        </select>
+      </div>
+    </div>
   );
 }
 
@@ -69,8 +83,8 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
     footballTeamAId: match.footballTeamAId || '',
     footballTeamBId: match.footballTeamBId || '',
     overtimeWinner: match.overtimeWinner || '',
-    teamModeA: match.footballTeamA?.type === 'national' ? 'national' : 'club',
-    teamModeB: match.footballTeamB?.type === 'national' ? 'national' : 'club'
+    competitionKeyA: getCompetitionKey(match.footballTeamA),
+    competitionKeyB: getCompetitionKey(match.footballTeamB)
   });
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(() => !isMatchReady({
@@ -81,8 +95,8 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
     footballTeamAId: match.footballTeamAId || '',
     footballTeamBId: match.footballTeamBId || '',
     overtimeWinner: match.overtimeWinner || '',
-    teamModeA: match.footballTeamA?.type === 'national' ? 'national' : 'club',
-    teamModeB: match.footballTeamB?.type === 'national' ? 'national' : 'club'
+    competitionKeyA: getCompetitionKey(match.footballTeamA),
+    competitionKeyB: getCompetitionKey(match.footballTeamB)
   }));
   const activeA = `${match.teamAPlayer1.name} + ${match.teamAPlayer2.name}`;
   const activeB = `${match.teamBPlayer1.name} + ${match.teamBPlayer2.name}`;
@@ -97,8 +111,8 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
       footballTeamAId: match.footballTeamAId || '',
       footballTeamBId: match.footballTeamBId || '',
       overtimeWinner: match.overtimeWinner || '',
-      teamModeA: match.footballTeamA?.type === 'national' ? 'national' : 'club',
-      teamModeB: match.footballTeamB?.type === 'national' ? 'national' : 'club'
+      competitionKeyA: getCompetitionKey(match.footballTeamA),
+      competitionKeyB: getCompetitionKey(match.footballTeamB)
     };
     setForm(nextForm);
     setExpanded(!isMatchReady(nextForm));
@@ -108,8 +122,8 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
     setBusy(true);
     try {
       const payload = { ...form };
-      delete payload.teamModeA;
-      delete payload.teamModeB;
+      delete payload.competitionKeyA;
+      delete payload.competitionKeyB;
       const result = await api(`/api/matches/${match.id}`, {
         method: 'PATCH',
         body: JSON.stringify(payload)
@@ -166,11 +180,14 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
             disabled={readOnly}
             value={form.footballTeamAId}
             teams={teams}
-            teamMode={form.teamModeA}
-            onModeChange={(mode)=>setForm((x)=>({...x, teamModeA: mode, footballTeamAId: ''}))}
+            competitionKey={form.competitionKeyA}
+            onCompetitionChange={(value)=>setForm((x)=>({...x, competitionKeyA: value, footballTeamAId: ''}))}
             onChange={(value)=>setForm((x)=>({...x, footballTeamAId:value}))}
           />
-          <input disabled={readOnly} className="input" type="number" value={form.auctionA} onChange={(e)=>setForm((x)=>({...x, auctionA:e.target.value}))} placeholder="Losovačka Tým A" />
+          <div>
+            <div className="fieldLabel">Losovačka</div>
+            <input disabled={readOnly} className="input" type="number" value={form.auctionA} onChange={(e)=>setForm((x)=>({...x, auctionA:e.target.value}))} />
+          </div>
         </div>
 
         <div className="teamBlock">
@@ -180,11 +197,14 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
             disabled={readOnly}
             value={form.footballTeamBId}
             teams={teams}
-            teamMode={form.teamModeB}
-            onModeChange={(mode)=>setForm((x)=>({...x, teamModeB: mode, footballTeamBId: ''}))}
+            competitionKey={form.competitionKeyB}
+            onCompetitionChange={(value)=>setForm((x)=>({...x, competitionKeyB: value, footballTeamBId: ''}))}
             onChange={(value)=>setForm((x)=>({...x, footballTeamBId:value}))}
           />
-          <input disabled={readOnly} className="input" type="number" value={form.auctionB} onChange={(e)=>setForm((x)=>({...x, auctionB:e.target.value}))} placeholder="Losovačka Tým B" />
+          <div>
+            <div className="fieldLabel">Losovačka</div>
+            <input disabled={readOnly} className="input" type="number" value={form.auctionB} onChange={(e)=>setForm((x)=>({...x, auctionB:e.target.value}))} />
+          </div>
         </div>
       </div>
 
@@ -202,6 +222,26 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
           </select>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+
+function LockedMatchCard({ match, previousOrder }) {
+  const activeA = `${match.teamAPlayer1.name} + ${match.teamAPlayer2.name}`;
+  const activeB = `${match.teamBPlayer1.name} + ${match.teamBPlayer2.name}`;
+  const bench = `${match.benchPlayer1.name} + ${match.benchPlayer2.name}`;
+
+  return (
+    <div className="matchCard lockedMatchCard">
+      <div className="matchHeading">
+        <div>
+          <div className="badge">Zápas {match.order}</div>
+          <div style={{fontSize:22,fontWeight:800, marginTop:8}}>{activeA} vs {activeB}</div>
+          <div className="small">Pauza: {bench}</div>
+        </div>
+      </div>
+      <div className="notice">Tento zápas se odemkne až po uzavření zápasu č. {previousOrder}. Vždy se doplňuje jen jeden následující zápas, aby byl průběh turnaje přehledný.</div>
     </div>
   );
 }
@@ -431,12 +471,25 @@ export default function TournamentDetail({ params }) {
           <>
             <div className="card pad">
               <div style={{fontWeight:800, fontSize:20}}>Zápasy</div>
-              <div className="small" style={{marginTop:6}}>Vyplněný a uložený zápas se automaticky sbalí. Otevřeš ho přes tlačítko Detaily zápasu č. X.</div>
+              <div className="small" style={{marginTop:6}}>Na obrazovce je vždy otevřený jen nejbližší následující zápas. Jakmile ho vyplníš a uložíš, odemkne se další. Hotové zápasy se automaticky sbalí do stručného řádku.</div>
             </div>
             <div className="grid pageSectionBottomSpace">
-              {tournament.matches.map((match) => (
-                <MatchCard key={match.id} match={match} teams={teams} readOnly={readOnly} onSaved={(data)=>setTournament(data)} />
-              ))}
+              {(() => {
+                const firstOpenIndex = tournament.matches.findIndex((match) => !isMatchReady({
+                  scoreA: match.scoreA ?? '',
+                  scoreB: match.scoreB ?? '',
+                  auctionA: match.auctionA ?? 0,
+                  auctionB: match.auctionB ?? 0,
+                  footballTeamAId: match.footballTeamAId || '',
+                  footballTeamBId: match.footballTeamBId || '',
+                  overtimeWinner: match.overtimeWinner || ''
+                }));
+                return tournament.matches.map((match, index) => {
+                  const isLocked = !readOnly && firstOpenIndex !== -1 && index > firstOpenIndex;
+                  if (isLocked) return <LockedMatchCard key={match.id} match={match} previousOrder={tournament.matches[index - 1]?.order || match.order - 1} />;
+                  return <MatchCard key={match.id} match={match} teams={teams} readOnly={readOnly} onSaved={(data)=>setTournament(data)} />;
+                });
+              })()}
             </div>
           </>
         ) : null}

@@ -29,6 +29,11 @@ function LoginCard({ onLoggedIn }) {
         headers: {}
       });
       setSession(data);
+      try {
+        const sound = new Audio('/login-sound.mp3');
+        sound.volume = 0.85;
+        await sound.play();
+      } catch {}
       onLoggedIn(data.user);
     } catch (err) {
       setError(err.message);
