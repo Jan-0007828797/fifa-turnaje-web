@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -11,22 +12,6 @@ function money(value) {
   return new Intl.NumberFormat('cs-CZ').format(value ?? 0);
 }
 
-function scoreLabel(match) {
-  if (match.scoreA == null || match.scoreB == null) return 'Nevyplněno';
-  const base = `${match.scoreA}:${match.scoreB}`;
-  if (match.scoreA !== match.scoreB) return base;
-  if (!match.overtimeWinner) return `${base} · čeká prodloužení`;
-  return `${base} · prodloužení ${match.overtimeWinner === 'A' ? 'Tým A' : 'Tým B'}`;
-}
-
-function isMatchReady(form) {
-  const hasTeams = Boolean(form.footballTeamAId) && Boolean(form.footballTeamBId) && form.footballTeamAId !== form.footballTeamBId;
-  const hasScore = String(form.scoreA) !== '' && String(form.scoreB) !== '';
-  const draw = hasScore && Number(form.scoreA) === Number(form.scoreB);
-  const hasOvertime = !draw || Boolean(form.overtimeWinner);
-  return hasTeams && hasScore && hasOvertime;
-}
-
 function MatchCard({ match, teams, onSaved }) {
   const [form, setForm] = useState({
     scoreA: match.scoreA ?? '',
@@ -38,21 +23,12 @@ function MatchCard({ match, teams, onSaved }) {
     overtimeWinner: match.overtimeWinner || ''
   });
   const [busy, setBusy] = useState(false);
-  const [expanded, setExpanded] = useState(() => !isMatchReady({
-    scoreA: match.scoreA ?? '',
-    scoreB: match.scoreB ?? '',
-    auctionA: match.auctionA ?? 0,
-    auctionB: match.auctionB ?? 0,
-    footballTeamAId: match.footballTeamAId || '',
-    footballTeamBId: match.footballTeamBId || '',
-    overtimeWinner: match.overtimeWinner || ''
-  }));
   const activeA = `${match.teamAPlayer1.name} + ${match.teamAPlayer2.name}`;
   const activeB = `${match.teamBPlayer1.name} + ${match.teamBPlayer2.name}`;
   const bench = `${match.benchPlayer1.name} + ${match.benchPlayer2.name}`;
 
   useEffect(() => {
-    const nextForm = {
+    setForm({
       scoreA: match.scoreA ?? '',
       scoreB: match.scoreB ?? '',
       auctionA: match.auctionA ?? 0,
@@ -60,9 +36,7 @@ function MatchCard({ match, teams, onSaved }) {
       footballTeamAId: match.footballTeamAId || '',
       footballTeamBId: match.footballTeamBId || '',
       overtimeWinner: match.overtimeWinner || ''
-    };
-    setForm(nextForm);
-    setExpanded(!isMatchReady(nextForm));
+    });
   }, [match]);
 
   async function save() {
@@ -73,7 +47,6 @@ function MatchCard({ match, teams, onSaved }) {
         body: JSON.stringify(form)
       });
       onSaved(result);
-      if (isMatchReady(form)) setExpanded(false);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -82,25 +55,6 @@ function MatchCard({ match, teams, onSaved }) {
   }
 
   const draw = String(form.scoreA) !== '' && String(form.scoreB) !== '' && Number(form.scoreA) === Number(form.scoreB);
-  const readyToCollapse = isMatchReady(form);
-  const teamAName = teams.find((team) => team.id === form.footballTeamAId)?.name || 'Nevybráno';
-  const teamBName = teams.find((team) => team.id === form.footballTeamBId)?.name || 'Nevybráno';
-
-  if (!expanded && readyToCollapse) {
-    return (
-      <div className="matchCard compactMatchCard">
-        <div className="row" style={{justifyContent:'space-between', alignItems:'flex-start'}}>
-          <div className="col" style={{gap:8}}>
-            <div className="badge">Detaily zápasu č. {match.order}</div>
-            <div style={{fontSize:22,fontWeight:800}}>{activeA} vs {activeB}</div>
-            <div className="small">Skóre: {scoreLabel(match)} • FC týmy: {teamAName} vs {teamBName}</div>
-            <div className="small">Pauza: {bench}</div>
-          </div>
-          <button className="btn ghost compactAction" onClick={() => setExpanded(true)}>Otevřít detail</button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="matchCard">
@@ -110,10 +64,7 @@ function MatchCard({ match, teams, onSaved }) {
           <div style={{fontSize:24,fontWeight:800, marginTop:8}}>{activeA} vs {activeB}</div>
           <div className="small">Pauza: {bench}</div>
         </div>
-        <div className="row matchActions">
-          {readyToCollapse ? <button className="btn ghost compactAction" onClick={() => setExpanded(false)}>Skrýt detail</button> : null}
-          <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Ukládám…' : 'Uložit zápas'}</button>
-        </div>
+        <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Ukládám…' : 'Uložit zápas'}</button>
       </div>
 
       <div className="grid grid-2">
@@ -164,7 +115,6 @@ export default function TournamentDetail({ params }) {
   const [saveBusy, setSaveBusy] = useState(false);
   const [audit, setAudit] = useState([]);
   const [syncLabel, setSyncLabel] = useState('Synchronizováno');
-  const [showParams, setShowParams] = useState(false);
 
   async function loadTournament() {
     const data = await api(`/api/tournaments/${params.id}`);
@@ -250,47 +200,32 @@ export default function TournamentDetail({ params }) {
         </div>
 
         <div className="card pad">
-          <div className="row" style={{justifyContent:'space-between', alignItems:'flex-start'}}>
+          <div className="grid grid-2">
             <div>
-              <div className="badge">Turnaj</div>
-              <div className="title" style={{marginTop:8, fontSize:'clamp(24px, 4vw, 38px)'}}>{tournament.name}</div>
-              <div className="subtitle">V horní liště máš rychlý přístup k zápasům, tabulce, financím a auditu. Parametry turnaje jsou schované níže.</div>
+              <div className="small">Název turnaje</div>
+              <input className="input" value={tournament.name} onChange={(e)=>setTournament((t)=>({...t, name:e.target.value}))} />
             </div>
-            <button className="btn ghost" style={{width:'auto', padding:'0 16px'}} onClick={() => setShowParams((s) => !s)}>
-              {showParams ? 'Skrýt parametry turnaje' : 'Parametry turnaje'}
-            </button>
+            <div>
+              <div className="small">Buy-in na hráče</div>
+              <input className="input" type="number" value={tournament.buyIn} onChange={(e)=>setTournament((t)=>({...t, buyIn:e.target.value}))} />
+            </div>
           </div>
+          <div className="grid grid-3" style={{marginTop:12}}>
+            {tournament.players.sort((a,b)=>a.slot.localeCompare(b.slot)).map((p) => (
+              <div key={p.id} className="teamBlock">
+                <div className="small">Slot {p.slot}</div>
+                <input className="input" value={p.name} onChange={(e)=>setTournament((t)=>({...t, players: t.players.map((x)=>x.id===p.id?{...x, name:e.target.value}:x)}))} />
+              </div>
+            ))}
+          </div>
+          <div className="footerBar"><button className="btn primary" onClick={saveHeader} disabled={saveBusy}>{saveBusy ? 'Ukládám…' : 'Uložit hlavičku turnaje'}</button></div>
         </div>
 
         <div className="grid grid-3">
           {kpis.map((kpi) => <div key={kpi.label} className="kpi"><div className="label">{kpi.label}</div><div className="value">{kpi.value}</div></div>)}
         </div>
 
-        {showParams ? (
-          <div className="card pad collapsiblePanel">
-            <div className="grid grid-2">
-              <div>
-                <div className="small">Název turnaje</div>
-                <input className="input" value={tournament.name} onChange={(e)=>setTournament((t)=>({...t, name:e.target.value}))} />
-              </div>
-              <div>
-                <div className="small">Buy-in na hráče</div>
-                <input className="input" type="number" value={tournament.buyIn} onChange={(e)=>setTournament((t)=>({...t, buyIn:e.target.value}))} />
-              </div>
-            </div>
-            <div className="grid grid-3" style={{marginTop:12}}>
-              {tournament.players.slice().sort((a,b)=>a.slot.localeCompare(b.slot)).map((p) => (
-                <div key={p.id} className="teamBlock">
-                  <div className="small">Slot {p.slot}</div>
-                  <input className="input" value={p.name} onChange={(e)=>setTournament((t)=>({...t, players: t.players.map((x)=>x.id===p.id?{...x, name:e.target.value}:x)}))} />
-                </div>
-              ))}
-            </div>
-            <div className="footerBar"><button className="btn primary" onClick={saveHeader} disabled={saveBusy}>{saveBusy ? 'Ukládám…' : 'Uložit parametry turnaje'}</button></div>
-          </div>
-        ) : null}
-
-        <div className="tabs topTabBar">
+        <div className="tabs">
           <button className={`tab ${tab==='matches'?'active':''}`} onClick={()=>setTab('matches')}>Zápasy</button>
           <button className={`tab ${tab==='standings'?'active':''}`} onClick={()=>setTab('standings')}>Tabulka</button>
           <button className={`tab ${tab==='finance'?'active':''}`} onClick={()=>setTab('finance')}>Finance</button>

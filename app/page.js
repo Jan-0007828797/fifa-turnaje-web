@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -73,10 +74,10 @@ function NewTournamentCard({ onCreate }) {
 
   return (
     <div className="card pad">
-      <div className="row" style={{justifyContent:'space-between', alignItems:'flex-start'}}>
+      <div className="row" style={{justifyContent:'space-between'}}>
         <div>
-          <div style={{fontSize:22,fontWeight:800}}>Založit turnaj</div>
-          <div className="small">Zde nastavíš nový turnaj. Jména hráčů a buy-in lze později upravit i v detailu turnaje.</div>
+          <div style={{fontSize:22,fontWeight:800}}>Nový turnaj</div>
+          <div className="small">Buy-in a hráče A–F můžeš později měnit.</div>
         </div>
         <div className="badge">9 zápasů</div>
       </div>
@@ -99,54 +100,10 @@ function NewTournamentCard({ onCreate }) {
   );
 }
 
-function TournamentList({ tournaments, loading }) {
-  return (
-    <div className="card pad pageSectionBottomSpace">
-      <div style={{fontSize:22,fontWeight:800}}>Navštívit turnaj</div>
-      <div className="small" style={{marginTop:4}}>Vyber uložený turnaj a otevři jeho zápasy, tabulku, finance nebo audit.</div>
-      <div className="grid" style={{marginTop:16}}>
-        {loading ? <div className="notice">Načítám…</div> : tournaments.map((t) => (
-          <Link href={`/tournaments/${t.id}`} key={t.id} className="card pad tournamentLinkCard" style={{display:'block'}}>
-            <div className="row" style={{justifyContent:'space-between', alignItems:'flex-start'}}>
-              <div>
-                <div style={{fontSize:22,fontWeight:800}}>{t.name}</div>
-                <div className="small" style={{marginTop:6}}>{t.players.map((p)=>`${p.slot}: ${p.name}`).join(' • ')}</div>
-              </div>
-              <div className="col" style={{alignItems:'flex-end'}}>
-                <span className="badge">{t.status}</span>
-                <span className="small">Buy-in {t.buyIn}</span>
-              </div>
-            </div>
-          </Link>
-        ))}
-        {!loading && tournaments.length === 0 ? <div className="notice">Zatím tu není žádný turnaj.</div> : null}
-      </div>
-    </div>
-  );
-}
-
-function HomeBottomNav({ activeView, onChange }) {
-  return (
-    <div className="bottomNavWrap">
-      <div className="bottomNav card">
-        <button className={`bottomNavItem ${activeView === 'create' ? 'active' : ''}`} onClick={() => onChange('create')}>
-          <span className="bottomNavTitle">Založit turnaj</span>
-          <span className="bottomNavHint">Nový turnaj</span>
-        </button>
-        <button className={`bottomNavItem ${activeView === 'visit' ? 'active' : ''}`} onClick={() => onChange('visit')}>
-          <span className="bottomNavTitle">Navštívit turnaj</span>
-          <span className="bottomNavHint">Uložené turnaje</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function HomePage() {
   const [user, setUser] = useState(null);
   const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeView, setActiveView] = useState('visit');
 
   async function loadTournaments() {
     setLoading(true);
@@ -199,17 +156,32 @@ export default function HomePage() {
           </div>
         </div>
 
-        {activeView === 'create' ? (
-          <NewTournamentCard onCreate={(created) => {
-            setTournaments((prev)=>[created, ...prev]);
-            setActiveView('visit');
-          }} />
-        ) : null}
+        <NewTournamentCard onCreate={(created) => {
+          setTournaments((prev)=>[created, ...prev]);
+        }} />
 
-        {activeView === 'visit' ? <TournamentList tournaments={tournaments} loading={loading} /> : null}
+        <div className="card pad">
+          <div style={{fontSize:22,fontWeight:800}}>Uložené turnaje</div>
+          <div className="small" style={{marginTop:4}}>Klikni na turnaj a otevři detail zápasů, tabulku a finance.</div>
+          <div className="grid" style={{marginTop:16}}>
+            {loading ? <div className="notice">Načítám…</div> : tournaments.map((t) => (
+              <Link href={`/tournaments/${t.id}`} key={t.id} className="card pad" style={{display:'block'}}>
+                <div className="row" style={{justifyContent:'space-between'}}>
+                  <div>
+                    <div style={{fontSize:22,fontWeight:800}}>{t.name}</div>
+                    <div className="small">{t.players.map((p)=>`${p.slot}: ${p.name}`).join(' • ')}</div>
+                  </div>
+                  <div className="col" style={{alignItems:'flex-end'}}>
+                    <span className="badge">{t.status}</span>
+                    <span className="small">Buy-in {t.buyIn}</span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+            {!loading && tournaments.length === 0 ? <div className="notice">Zatím tu není žádný turnaj.</div> : null}
+          </div>
+        </div>
       </div>
-
-      <HomeBottomNav activeView={activeView} onChange={setActiveView} />
     </main>
   );
 }

@@ -1,3 +1,4 @@
+
 :root {
   --bg: #0b1220;
   --panel: rgba(15, 23, 42, 0.88);
@@ -49,16 +50,10 @@ button, input, select { font: inherit; }
 .tabs { display:flex; gap:8px; flex-wrap:wrap; }
 .tab { padding:10px 14px; border-radius: 999px; border:1px solid var(--line); background:transparent; color:var(--muted); }
 .tab.active { background: var(--brand); color:#06230f; border-color: transparent; font-weight: 800; }
-.topTabBar { position: sticky; top: 12px; z-index: 10; padding: 10px; border-radius: 20px; background: rgba(11, 18, 32, 0.78); backdrop-filter: blur(16px); }
-@media (prefers-color-scheme: light) {
-  .topTabBar { background: rgba(244, 247, 251, 0.85); }
-}
 .matchCard { padding:18px; border-radius:20px; background: var(--panel); border:1px solid var(--line); display:flex; flex-direction:column; gap:16px; }
-.compactMatchCard { gap: 8px; }
 .matchHeading { display:flex; justify-content:space-between; gap:12px; align-items:center; }
-.matchActions { margin-left: auto; }
 .teamBlock { border:1px solid var(--line); background: var(--panel-2); border-radius: 18px; padding: 14px; display:flex; flex-direction:column; gap:10px; }
-.scoreRow { display:grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap:10px; align-items:end; }
+.scoreRow { display:grid; grid-template-columns: 1fr 90px 1fr 90px; gap:10px; align-items:end; }
 .tableWrap { overflow:auto; border-radius: 18px; border:1px solid var(--line); }
 table { width:100%; border-collapse:collapse; min-width: 760px; }
 th, td { padding:12px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
@@ -67,20 +62,6 @@ strong.top { color: var(--brand); }
 .notice { padding: 12px 14px; border:1px dashed var(--line); border-radius: 14px; color: var(--muted); }
 .footerBar { position: sticky; bottom: 0; padding-top: 8px; background: linear-gradient(180deg, transparent, var(--bg) 40%); }
 .small { font-size: 12px; color: var(--muted); }
-.bottomNavWrap { position: sticky; bottom: 12px; z-index: 20; padding-top: 16px; }
-.bottomNav { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; padding:10px; max-width: 1200px; margin: 0 auto; }
-.bottomNavItem { min-height: 74px; border-radius: 18px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); display:flex; flex-direction:column; align-items:flex-start; justify-content:center; padding: 14px 16px; cursor:pointer; }
-.bottomNavItem.active { background: linear-gradient(135deg, rgba(52,211,153,0.22), rgba(34,197,94,0.18)); border-color: rgba(52,211,153,0.42); }
-.bottomNavTitle { font-weight: 800; }
-.bottomNavHint { font-size: 12px; color: var(--muted); margin-top: 4px; }
-.pageSectionBottomSpace { margin-bottom: 90px; }
-.tournamentLinkCard { transition: transform 0.18s ease, border-color 0.18s ease; }
-.tournamentLinkCard:hover { transform: translateY(-2px); border-color: rgba(52,211,153,0.3); }
-.collapsiblePanel { margin-top: -2px; }
-.compactAction { width: auto; padding: 0 16px; }
 @media (max-width: 720px) {
-  .page { padding:12px; }
-  .matchHeading { flex-direction: column; align-items: stretch; }
-  .matchActions { width: 100%; margin-left: 0; flex-direction: column; }
-  .topTabBar { top: 8px; }
+  .scoreRow { grid-template-columns: 1fr 1fr; }
 }
