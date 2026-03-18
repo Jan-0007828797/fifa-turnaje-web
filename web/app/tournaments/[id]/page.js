@@ -290,12 +290,26 @@ export default function TournamentDetail({ params }) {
           </div>
         ) : null}
 
+        <div className="tabs topTabBar">
+          <button className={`tab ${tab==='matches'?'active':''}`} onClick={()=>setTab('matches')}>Zápasy</button>
+          <button className={`tab ${tab==='standings'?'active':''}`} onClick={()=>setTab('standings')}>Tabulka</button>
+          <button className={`tab ${tab==='finance'?'active':''}`} onClick={()=>setTab('finance')}>Finance</button>
+          {user.name === 'Nojby' ? <button className={`tab ${tab==='audit'?'active':''}`} onClick={()=>setTab('audit')}>Audit</button> : null}
+          <a className="tab" href={`${API_URL}/api/tournaments/${params.id}/export?token=${Date.now()}`} onClick={async (e)=>{
+            e.preventDefault();
+            const token = localStorage.getItem('fifa_token');
+            const response = await fetch(`${API_URL}/api/tournaments/${params.id}/export`, { headers: { Authorization: `Bearer ${token}` }});
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `fifa-turnaj-${params.id}.xlsx`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}>Excel export</a>
+        </div>
+
         {tab === 'matches' ? (
-          <>
-            <div className="card pad">
-            <div style={{fontWeight:800, fontSize:20}}>Zápasy</div>
-            <div className="small" style={{marginTop:6}}>Vyplněný a uložený zápas se automaticky sbalí. Otevřeš ho přes tlačítko Detaily zápasu č. X.</div>
-          </div>
           <div className="grid">
             {tournament.matches.map((match) => (
               <MatchCard key={match.id} match={match} teams={teams} onSaved={(data)=>setTournament(data)} />
