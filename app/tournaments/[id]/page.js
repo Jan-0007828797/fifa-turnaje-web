@@ -226,13 +226,12 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
         body: JSON.stringify({ imageDataUrl })
       });
       setPhotoResult(payload);
+      if (payload.warning) {
+        console.warn('photo-extract-warning', payload.warning);
+      }
     } catch (err) {
       const message = String(err?.message || 'Čtení týmů z fotky selhalo');
-      alert(
-        message.includes('OPENAI_API_KEY')
-          ? 'Foto rozpoznání na serveru není aktivní. Přidal jsem lepší chybový stav; teď prosím nasadit i nový server fix.'
-          : message
-      );
+      alert(message);
     } finally {
       setExtractBusy(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -259,7 +258,7 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
           <div className="matchSidePlayers">{teamAPlayerNames}</div>
           <div className="modeActionRow">
             <button type="button" className={`segmentedBtn ${mode === 'manual' ? 'active' : ''}`} onClick={() => setMode('manual')} disabled={!canEdit}>Ručně</button>
-            <button type="button" className={`segmentedBtn ${mode === 'photo' ? 'active' : ''}`} onClick={() => { setMode('photo'); inputRef.current?.click(); }} disabled={!canEdit}>Foto</button>
+            <button type="button" className={`segmentedBtn ${mode === 'photo' ? 'active' : ''}`} onClick={() => { setMode('photo'); setPhotoResult(null); inputRef.current?.click(); }} disabled={!canEdit}>Foto</button>
           </div>
           <input ref={inputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhotoSelection} />
           <TeamPicker
@@ -301,7 +300,10 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
       {photoResult ? (
         <div className="card photoConfirmCard">
           <div className="photoConfirmHeader">
-            <div style={{ fontWeight: 800 }}>Potvrdit týmy</div>
+            <div>
+              <div style={{ fontWeight: 800 }}>Potvrdit týmy</div>
+              <div className="small">Zdroj: {photoResult.source === 'ai' ? 'AI + katalog' : 'Lokální OCR + katalog'}</div>
+            </div>
             <button type="button" className="btn ghost compactAction" onClick={() => setPhotoResult(null)}>Zavřít</button>
           </div>
           <div className="grid grid-2">
