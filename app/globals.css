@@ -144,3 +144,102 @@ strong.top { color: var(--brand); }
 .teamBlock .input {
   min-height: 48px;
 }
+
+
+.tournamentShellCompact { gap: 14px; }
+.heroCompactCard { padding-top: 16px; padding-bottom: 16px; }
+.heroCompactHeader { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.matchListCard { padding: 14px; }
+.matchListGrid { display:grid; gap:10px; }
+.matchListRow {
+  width: 100%;
+  min-height: 64px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding: 0 18px;
+  font-weight: 800;
+  cursor: pointer;
+  text-align:left;
+}
+.matchListRow.active {
+  border-color: rgba(52,211,153,0.45);
+  box-shadow: inset 0 0 0 1px rgba(52,211,153,0.22);
+}
+.matchListRow:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+.matchDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  flex: 0 0 16px;
+  box-shadow: 0 0 0 4px rgba(255,255,255,0.02);
+}
+.matchDot.done { background: #22c55e; }
+.matchDot.open { background: #ef4444; }
+.matchDot.locked { background: #64748b; }
+.matchListLabel { font-size: 18px; }
+.matchDetailCard { display:flex; flex-direction:column; gap:14px; }
+.matchDetailHeader { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.matchTitle { margin-top: 10px; font-size: clamp(22px, 3vw, 30px); font-weight: 800; letter-spacing: -0.03em; }
+.matchDualGrid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
+.modernBlock { gap: 12px; }
+.matchSideLabel { font-size: 13px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.matchSidePlayers { font-size: 20px; font-weight: 800; line-height: 1.2; }
+.modeActionRow { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; }
+.modeActionSpacer { visibility: hidden; }
+.selectedMeta { min-height: 24px; font-size: 14px; color: var(--muted); }
+.scoreBoardCard { border:1px solid var(--line); border-radius: 18px; background: var(--panel-2); padding: 14px; display:flex; flex-direction:column; gap:12px; }
+.scoreBoardGrid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
+.scoreSideName { margin-bottom: 8px; font-size: 14px; font-weight: 700; color: var(--muted); }
+.stepperRow { display:grid; grid-template-columns: 56px 1fr 56px; gap:10px; align-items:center; }
+.stepperBtn {
+  min-height: 52px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(52,211,153,0.12);
+  color: var(--text);
+  font-size: 28px;
+  font-weight: 800;
+  cursor:pointer;
+}
+.stepperBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.stepperValue {
+  min-height: 52px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.03);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 26px;
+  font-weight: 800;
+}
+.photoConfirmCard {
+  padding: 14px;
+  border-radius: 18px;
+  border:1px solid rgba(52,211,153,0.3);
+  background: linear-gradient(135deg, rgba(52,211,153,0.12), rgba(34,197,94,0.08));
+}
+.photoConfirmHeader { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom: 12px; }
+@media (max-width: 900px) {
+  .matchDualGrid,
+  .scoreBoardGrid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .heroCompactHeader,
+  .matchDetailHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .matchListLabel { font-size: 17px; }
+  .stepperRow { grid-template-columns: 52px 1fr 52px; }
+}

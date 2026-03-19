@@ -1,30 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { io } from 'socket.io-client';
 import { api, clearSession, getUser } from '@/lib/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const SCORE_MAX = 20;
+const AUCTION_MAX = 1000;
 
 function money(value) {
   return new Intl.NumberFormat('cs-CZ').format(value ?? 0);
-}
-
-function scoreLabel(match) {
-  if (match.scoreA == null || match.scoreB == null) return 'Nevyplněno';
-  const base = `${match.scoreA}:${match.scoreB}`;
-  if (match.scoreA !== match.scoreB) return base;
-  if (!match.overtimeWinner) return `${base} · čeká prodloužení`;
-  return `${base} · prodloužení ${match.overtimeWinner === 'A' ? 'Tým A' : 'Tým B'}`;
-}
-
-function isMatchReady(form) {
-  const hasTeams = Boolean(form.footballTeamAId) && Boolean(form.footballTeamBId) && form.footballTeamAId !== form.footballTeamBId;
-  const hasScore = String(form.scoreA) !== '' && String(form.scoreB) !== '';
-  const draw = hasScore && Number(form.scoreA) === Number(form.scoreB);
-  const hasOvertime = !draw || Boolean(form.overtimeWinner);
-  return hasTeams && hasScore && hasOvertime;
 }
 
 function getCompetitionKey(team) {
@@ -32,9 +18,9 @@ function getCompetitionKey(team) {
 }
 
 function getCompetitionChoices(teams) {
-  const nationals = teams
-    .filter((team) => team.type === 'national')
-    .map((team) => ({ key: 'International', label: 'International', sortLabel: '' }));
+  const nationals = teams.some((team) => team.type === 'national')
+    ? [{ key: 'International', label: 'International', sortLabel: '' }]
+    : [];
 
   const leagues = Array.from(new Map(
     teams
@@ -45,91 +31,140 @@ function getCompetitionChoices(teams) {
       })
   ).values()).sort((a, b) => a.sortLabel.localeCompare(b.sortLabel, 'cs'));
 
-  return nationals.length ? [nationals[0], ...leagues] : leagues;
+  return [...nationals, ...leagues];
 }
 
-function TeamSelect({ value, teams, competitionKey, onCompetitionChange, onChange, disabled }) {
-  const competitionChoices = getCompetitionChoices(teams);
-  const activeCompetition = competitionKey || competitionChoices[0]?.key || '';
-  const filteredTeams = teams
-    .filter((team) => activeCompetition === 'International' ? team.type === 'national' : `${team.country} · ${team.competition}` === activeCompetition)
-    .sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+function isMatchClosed(matchLike) {
+  const hasTeams = Boolean(matchLike.footballTeamAId) && Boolean(matchLike.footballTeamBId) && matchLike.footballTeamAId !== matchLike.footballTeamBId;
+  const hasScore = String(matchLike.scoreA) !== '' && String(matchLike.scoreB) !== '';
+  const draw = hasScore && Number(matchLike.scoreA) === Number(matchLike.scoreB);
+  const hasOvertime = !draw || Boolean(matchLike.overtimeWinner);
+  return hasTeams && hasScore && hasOvertime;
+}
+
+function scoreLabel(match) {
+  if (match.scoreA == null || match.scoreB == null) return '—';
+  return `${match.scoreA}:${match.scoreB}`;
+}
+
+function Stepper({ value, onChange, step, min = 0, max, disabled }) {
+  const numberValue = Number(value || 0);
+  const canDec = !disabled && numberValue > min;
+  const canInc = !disabled && (max == null || numberValue < max);
+
+  function update(next) {
+    const bounded = Math.max(min, max == null ? next : Math.min(max, next));
+    onChange(bounded);
+  }
 
   return (
-    <div className="col" style={{gap:10, marginTop:8}}>
-      <div>
-        <div className="fieldLabel">Soutěž / výběr</div>
-        <select disabled={disabled} className="select" value={activeCompetition} onChange={(e)=>onCompetitionChange(e.target.value)}>
-          {competitionChoices.map((choice) => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
-        </select>
-      </div>
-      <div>
-        <div className="fieldLabel">Tým</div>
-        <select disabled={disabled} className="select" value={value} onChange={(e)=>onChange(e.target.value)}>
-          <option value="">{activeCompetition === 'International' ? 'Vyber národní tým' : 'Vyber tým z dané soutěže'}</option>
-          {filteredTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-        </select>
-      </div>
+    <div className="stepperRow">
+      <button type="button" className="stepperBtn" disabled={!canDec} onClick={() => update(numberValue - step)}>−</button>
+      <div className="stepperValue">{numberValue}</div>
+      <button type="button" className="stepperBtn" disabled={!canInc} onClick={() => update(numberValue + step)}>+</button>
     </div>
   );
 }
 
-function MatchCard({ match, teams, onSaved, readOnly }) {
-  const [form, setForm] = useState({
-    scoreA: match.scoreA ?? '',
-    scoreB: match.scoreB ?? '',
-    auctionA: match.auctionA ?? 0,
-    auctionB: match.auctionB ?? 0,
-    footballTeamAId: match.footballTeamAId || '',
-    footballTeamBId: match.footballTeamBId || '',
-    overtimeWinner: match.overtimeWinner || '',
-    competitionKeyA: getCompetitionKey(match.footballTeamA),
-    competitionKeyB: getCompetitionKey(match.footballTeamB)
-  });
+function TeamPicker({ teams, competitionKey, selectedTeamId, onCompetitionChange, onTeamChange, disabled }) {
+  const competitionChoices = getCompetitionChoices(teams);
+  const activeCompetition = competitionKey || competitionChoices[0]?.key || '';
+  const filteredTeams = teams
+    .filter((team) => activeCompetition === 'International'
+      ? team.type === 'national'
+      : `${team.country} · ${team.competition}` === activeCompetition)
+    .sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+
+  return (
+    <div className="col" style={{ gap: 10 }}>
+      <select disabled={disabled} className="select" value={activeCompetition} onChange={(e) => onCompetitionChange(e.target.value)}>
+        {competitionChoices.map((choice) => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
+      </select>
+      <select disabled={disabled} className="select" value={selectedTeamId} onChange={(e) => onTeamChange(e.target.value)}>
+        <option value="">Vyber tým</option>
+        {filteredTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function MatchListRow({ label, status, disabled, active, onClick }) {
+  return (
+    <button type="button" className={`matchListRow ${active ? 'active' : ''}`} disabled={disabled} onClick={onClick}>
+      <span className={`matchDot ${status}`} />
+      <span className="matchListLabel">{label}</span>
+    </button>
+  );
+}
+
+function MatchDetail({ match, teams, canEdit, onSaved }) {
+  const inputRef = useRef(null);
+  const [mode, setMode] = useState('manual');
   const [busy, setBusy] = useState(false);
-  const [expanded, setExpanded] = useState(() => !isMatchReady({
-    scoreA: match.scoreA ?? '',
-    scoreB: match.scoreB ?? '',
-    auctionA: match.auctionA ?? 0,
-    auctionB: match.auctionB ?? 0,
+  const [extractBusy, setExtractBusy] = useState(false);
+  const [form, setForm] = useState({
     footballTeamAId: match.footballTeamAId || '',
     footballTeamBId: match.footballTeamBId || '',
-    overtimeWinner: match.overtimeWinner || '',
     competitionKeyA: getCompetitionKey(match.footballTeamA),
-    competitionKeyB: getCompetitionKey(match.footballTeamB)
-  }));
-  const activeA = `${match.teamAPlayer1.name} + ${match.teamAPlayer2.name}`;
-  const activeB = `${match.teamBPlayer1.name} + ${match.teamBPlayer2.name}`;
-  const bench = `${match.benchPlayer1.name} + ${match.benchPlayer2.name}`;
+    competitionKeyB: getCompetitionKey(match.footballTeamB),
+    auctionA: Number(match.auctionA || 0),
+    auctionB: Number(match.auctionB || 0),
+    scoreA: Number(match.scoreA || 0),
+    scoreB: Number(match.scoreB || 0)
+  });
+  const [photoResult, setPhotoResult] = useState(null);
 
   useEffect(() => {
-    const nextForm = {
-      scoreA: match.scoreA ?? '',
-      scoreB: match.scoreB ?? '',
-      auctionA: match.auctionA ?? 0,
-      auctionB: match.auctionB ?? 0,
+    setForm({
       footballTeamAId: match.footballTeamAId || '',
       footballTeamBId: match.footballTeamBId || '',
-      overtimeWinner: match.overtimeWinner || '',
       competitionKeyA: getCompetitionKey(match.footballTeamA),
-      competitionKeyB: getCompetitionKey(match.footballTeamB)
-    };
-    setForm(nextForm);
-    setExpanded(!isMatchReady(nextForm));
+      competitionKeyB: getCompetitionKey(match.footballTeamB),
+      auctionA: Number(match.auctionA || 0),
+      auctionB: Number(match.auctionB || 0),
+      scoreA: Number(match.scoreA || 0),
+      scoreB: Number(match.scoreB || 0),
+      overtimeWinner: match.overtimeWinner || ''
+    });
+    setPhotoResult(null);
+    setMode('manual');
   }, [match]);
 
-  async function save() {
+  const teamAPlayerNames = `${match.teamAPlayer1.name} + ${match.teamAPlayer2.name}`;
+  const teamBPlayerNames = `${match.teamBPlayer1.name} + ${match.teamBPlayer2.name}`;
+  const selectedTeamA = teams.find((team) => team.id === form.footballTeamAId);
+  const selectedTeamB = teams.find((team) => team.id === form.footballTeamBId);
+
+  function applyDetectedTeams(payload) {
+    const homeTeam = teams.find((team) => team.id === payload.homeTeamId);
+    const awayTeam = teams.find((team) => team.id === payload.awayTeamId);
+    setForm((current) => ({
+      ...current,
+      footballTeamAId: payload.homeTeamId || current.footballTeamAId,
+      footballTeamBId: payload.awayTeamId || current.footballTeamBId,
+      competitionKeyA: getCompetitionKey(homeTeam) || current.competitionKeyA,
+      competitionKeyB: getCompetitionKey(awayTeam) || current.competitionKeyB
+    }));
+    setPhotoResult(null);
+    setMode('manual');
+  }
+
+  async function saveMatch() {
     setBusy(true);
     try {
-      const payload = { ...form };
-      delete payload.competitionKeyA;
-      delete payload.competitionKeyB;
       const result = await api(`/api/matches/${match.id}`, {
         method: 'PATCH',
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          footballTeamAId: form.footballTeamAId,
+          footballTeamBId: form.footballTeamBId,
+          auctionA: Number(form.auctionA || 0),
+          auctionB: Number(form.auctionB || 0),
+          scoreA: Number(form.scoreA || 0),
+          scoreB: Number(form.scoreB || 0),
+          overtimeWinner: Number(form.scoreA || 0) === Number(form.scoreB || 0) ? (form.overtimeWinner || null) : null
+        })
       });
-      onSaved(result);
-      if (isMatchReady(form)) setExpanded(false);
+      onSaved(result, match.order);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -137,165 +172,199 @@ function MatchCard({ match, teams, onSaved, readOnly }) {
     }
   }
 
-  const draw = String(form.scoreA) !== '' && String(form.scoreB) !== '' && Number(form.scoreA) === Number(form.scoreB);
-  const readyToCollapse = isMatchReady(form);
-  const teamAName = teams.find((team) => team.id === form.footballTeamAId)?.name || 'Nevybráno';
-  const teamBName = teams.find((team) => team.id === form.footballTeamBId)?.name || 'Nevybráno';
-
-  if (!expanded && readyToCollapse) {
-    return (
-      <div className="matchCard compactMatchCard">
-        <div className="row" style={{justifyContent:'space-between', alignItems:'flex-start'}}>
-          <div className="col" style={{gap:8}}>
-            <div className="badge">Detaily zápasu č. {match.order}</div>
-            <div style={{fontSize:22,fontWeight:800}}>{activeA} vs {activeB}</div>
-            <div className="small">Skóre: {scoreLabel(match)} • FC týmy: {teamAName} vs {teamBName}</div>
-            <div className="small">Pauza: {bench}</div>
-          </div>
-          <button className="btn ghost compactAction" onClick={() => setExpanded(true)}>Otevřít detail</button>
-        </div>
-      </div>
-    );
+  async function handlePhotoSelection(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        setExtractBusy(true);
+        setMode('photo');
+        const payload = await api(`/api/matches/${match.id}/extract-teams`, {
+          method: 'POST',
+          body: JSON.stringify({ imageDataUrl: reader.result })
+        });
+        setPhotoResult(payload);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        setExtractBusy(false);
+        if (inputRef.current) inputRef.current.value = '';
+      }
+    };
+    reader.readAsDataURL(file);
   }
 
   return (
-    <div className="matchCard">
-      <div className="matchHeading">
+    <div className="card pad pageSectionBottomSpace matchDetailCard">
+      <div className="matchDetailHeader">
         <div>
           <div className="badge">Zápas {match.order}</div>
-          <div style={{fontSize:24,fontWeight:800, marginTop:8}}>{activeA} vs {activeB}</div>
-          <div className="small">Pauza: {bench}</div>
+          <div className="matchTitle">{teamAPlayerNames} vs {teamBPlayerNames}</div>
         </div>
-        <div className="row matchActions">
-          {readyToCollapse ? <button className="btn ghost compactAction" onClick={() => setExpanded(false)}>Skrýt detail</button> : null}
-          {!readOnly ? <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Ukládám…' : 'Uložit zápas'}</button> : null}
-        </div>
+        {canEdit ? (
+          <button className="btn primary" disabled={busy} onClick={saveMatch}>{busy ? 'Ukládám…' : 'Uložit zápas'}</button>
+        ) : (
+          <div className="badge">Jen pro čtení</div>
+        )}
       </div>
 
-      <div className="grid grid-2">
-        <div className="teamBlock">
-          <div style={{fontWeight:800}}>Tým A</div>
-          <div className="small">{activeA}</div>
-          <TeamSelect
-            disabled={readOnly}
-            value={form.footballTeamAId}
+      <div className="matchDualGrid">
+        <div className="teamBlock modernBlock">
+          <div className="matchSideLabel">Domácí</div>
+          <div className="matchSidePlayers">{teamAPlayerNames}</div>
+          <div className="modeActionRow">
+            <button type="button" className={`segmentedBtn ${mode === 'manual' ? 'active' : ''}`} onClick={() => setMode('manual')} disabled={!canEdit}>Ručně</button>
+            <button type="button" className={`segmentedBtn ${mode === 'photo' ? 'active' : ''}`} onClick={() => { setMode('photo'); inputRef.current?.click(); }} disabled={!canEdit}>Foto</button>
+          </div>
+          <input ref={inputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhotoSelection} />
+          <TeamPicker
             teams={teams}
             competitionKey={form.competitionKeyA}
-            onCompetitionChange={(value)=>setForm((x)=>({...x, competitionKeyA: value, footballTeamAId: ''}))}
-            onChange={(value)=>setForm((x)=>({...x, footballTeamAId:value}))}
+            selectedTeamId={form.footballTeamAId}
+            onCompetitionChange={(value) => setForm((current) => ({ ...current, competitionKeyA: value, footballTeamAId: '' }))}
+            onTeamChange={(value) => setForm((current) => ({ ...current, footballTeamAId: value }))}
+            disabled={!canEdit}
           />
           <div>
             <div className="fieldLabel">Losovačka</div>
-            <input disabled={readOnly} className="input" type="number" value={form.auctionA} onChange={(e)=>setForm((x)=>({...x, auctionA:e.target.value}))} />
+            <Stepper value={form.auctionA} onChange={(value) => setForm((current) => ({ ...current, auctionA: value }))} step={10} min={0} max={AUCTION_MAX} disabled={!canEdit} />
           </div>
+          <div className="selectedMeta">{selectedTeamA?.name || 'Nevybráno'}</div>
         </div>
 
-        <div className="teamBlock">
-          <div style={{fontWeight:800}}>Tým B</div>
-          <div className="small">{activeB}</div>
-          <TeamSelect
-            disabled={readOnly}
-            value={form.footballTeamBId}
+        <div className="teamBlock modernBlock">
+          <div className="matchSideLabel">Hosté</div>
+          <div className="matchSidePlayers">{teamBPlayerNames}</div>
+          <div className="modeActionRow modeActionSpacer" />
+          <TeamPicker
             teams={teams}
             competitionKey={form.competitionKeyB}
-            onCompetitionChange={(value)=>setForm((x)=>({...x, competitionKeyB: value, footballTeamBId: ''}))}
-            onChange={(value)=>setForm((x)=>({...x, footballTeamBId:value}))}
+            selectedTeamId={form.footballTeamBId}
+            onCompetitionChange={(value) => setForm((current) => ({ ...current, competitionKeyB: value, footballTeamBId: '' }))}
+            onTeamChange={(value) => setForm((current) => ({ ...current, footballTeamBId: value }))}
+            disabled={!canEdit}
           />
           <div>
             <div className="fieldLabel">Losovačka</div>
-            <input disabled={readOnly} className="input" type="number" value={form.auctionB} onChange={(e)=>setForm((x)=>({...x, auctionB:e.target.value}))} />
+            <Stepper value={form.auctionB} onChange={(value) => setForm((current) => ({ ...current, auctionB: value }))} step={10} min={0} max={AUCTION_MAX} disabled={!canEdit} />
           </div>
+          <div className="selectedMeta">{selectedTeamB?.name || 'Nevybráno'}</div>
         </div>
       </div>
 
-      <div className="teamBlock">
-        <div style={{fontWeight:800}}>Výsledek</div>
-        <div className="scoreRow">
-          <div><div className="small">Skóre A</div><input disabled={readOnly} className="input" type="number" value={form.scoreA} onChange={(e)=>setForm((x)=>({...x, scoreA:e.target.value}))} /></div>
-          <div><div className="small">Skóre B</div><input disabled={readOnly} className="input" type="number" value={form.scoreB} onChange={(e)=>setForm((x)=>({...x, scoreB:e.target.value}))} /></div>
+      {extractBusy ? <div className="notice">Čtu fotku…</div> : null}
+      {photoResult ? (
+        <div className="card photoConfirmCard">
+          <div className="photoConfirmHeader">
+            <div style={{ fontWeight: 800 }}>Potvrdit týmy</div>
+            <button type="button" className="btn ghost compactAction" onClick={() => setPhotoResult(null)}>Zavřít</button>
+          </div>
+          <div className="grid grid-2">
+            <div>
+              <div className="fieldLabel">Domácí</div>
+              <select className="select" value={photoResult.homeTeamId || ''} onChange={(e) => setPhotoResult((current) => ({ ...current, homeTeamId: e.target.value }))}>
+                <option value="">Vyber tým</option>
+                {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="fieldLabel">Hosté</div>
+              <select className="select" value={photoResult.awayTeamId || ''} onChange={(e) => setPhotoResult((current) => ({ ...current, awayTeamId: e.target.value }))}>
+                <option value="">Vyber tým</option>
+                {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="footerBar">
+            <button type="button" className="btn primary" disabled={!photoResult.homeTeamId || !photoResult.awayTeamId} onClick={() => applyDetectedTeams(photoResult)}>Použít týmy</button>
+          </div>
         </div>
-        {draw ? (
-          <select disabled={readOnly} className="select" value={form.overtimeWinner} onChange={(e)=>setForm((x)=>({...x, overtimeWinner:e.target.value}))}>
-            <option value="">Vyber vítěze prodloužení</option>
-            <option value="A">Tým A</option>
-            <option value="B">Tým B</option>
-          </select>
+      ) : null}
+
+      <div className="scoreBoardCard">
+        <div className="fieldLabel">Výsledek</div>
+        <div className="scoreBoardGrid">
+          <div>
+            <div className="scoreSideName">{match.teamAPlayer1.name} + {match.teamAPlayer2.name}</div>
+            <Stepper value={form.scoreA} onChange={(value) => setForm((current) => ({ ...current, scoreA: value }))} step={1} min={0} max={SCORE_MAX} disabled={!canEdit} />
+          </div>
+          <div>
+            <div className="scoreSideName">{match.teamBPlayer1.name} + {match.teamBPlayer2.name}</div>
+            <Stepper value={form.scoreB} onChange={(value) => setForm((current) => ({ ...current, scoreB: value }))} step={1} min={0} max={SCORE_MAX} disabled={!canEdit} />
+          </div>
+        </div>
+        {Number(form.scoreA) === Number(form.scoreB) ? (
+          <div>
+            <div className="fieldLabel">Prodloužení</div>
+            <div className="modeActionRow">
+              <button type="button" className={`segmentedBtn ${form.overtimeWinner === 'A' ? 'active' : ''}`} onClick={() => setForm((current) => ({ ...current, overtimeWinner: 'A' }))} disabled={!canEdit}>Domácí</button>
+              <button type="button" className={`segmentedBtn ${form.overtimeWinner === 'B' ? 'active' : ''}`} onClick={() => setForm((current) => ({ ...current, overtimeWinner: 'B' }))} disabled={!canEdit}>Hosté</button>
+            </div>
+          </div>
         ) : null}
       </div>
     </div>
   );
 }
 
-
-function LockedMatchCard({ match, previousOrder }) {
-  const activeA = `${match.teamAPlayer1.name} + ${match.teamAPlayer2.name}`;
-  const activeB = `${match.teamBPlayer1.name} + ${match.teamBPlayer2.name}`;
-  const bench = `${match.benchPlayer1.name} + ${match.benchPlayer2.name}`;
-
-  return (
-    <div className="matchCard lockedMatchCard">
-      <div className="matchHeading">
-        <div>
-          <div className="badge">Zápas {match.order}</div>
-          <div style={{fontSize:22,fontWeight:800, marginTop:8}}>{activeA} vs {activeB}</div>
-          <div className="small">Pauza: {bench}</div>
-        </div>
-      </div>
-      <div className="notice">Tento zápas se odemkne až po uzavření zápasu č. {previousOrder}. Vždy se doplňuje jen jeden následující zápas, aby byl průběh turnaje přehledný.</div>
-    </div>
-  );
-}
-
-function AdminActions({ tournament, onStatusChange, onDeleted, busy }) {
+function AdminActions({ tournament, onStatusChange, onDeleted }) {
+  const [busy, setBusy] = useState(false);
   const [deleteChoiceOpen, setDeleteChoiceOpen] = useState(false);
 
   async function closeTournament() {
-    if (!confirm('Uzavřít turnaj? Po uzavření se propíše do Stats FC2026 a nebude ho možné dále upravovat.')) return;
+    if (!confirm('Uzavřít turnaj?')) return;
+    setBusy(true);
     try {
-      const result = await api(`/api/tournaments/${tournament.id}/status`, {
+      const updated = await api(`/api/tournaments/${tournament.id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'closed' })
       });
-      onStatusChange(result);
-      alert('Turnaj byl uzavřen a propsal se do statistik.');
+      onStatusChange(updated);
     } catch (err) {
       alert(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function archiveTournament() {
-    if (!confirm('Archivovat turnaj? Zmizí ze seznamu aktivních turnajů a nepropíše se do statistik.')) return;
+    if (!confirm('Archivovat turnaj?')) return;
+    setBusy(true);
     try {
-      await api(`/api/tournaments/${tournament.id}/status`, {
+      const updated = await api(`/api/tournaments/${tournament.id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'archived' })
       });
-      onDeleted();
+      onStatusChange(updated);
     } catch (err) {
       alert(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function deleteTournament() {
-    if (!confirm('Smazat turnaj natrvalo? Tuto akci nelze vrátit.')) return;
+    if (!confirm('Smazat turnaj natrvalo?')) return;
+    setBusy(true);
     try {
       await api(`/api/tournaments/${tournament.id}`, { method: 'DELETE' });
       onDeleted();
     } catch (err) {
       alert(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <div className="adminPanel card pad">
-      <div style={{fontSize:20, fontWeight:800}}>Správa turnaje</div>
-      <div className="small" style={{marginTop:4}}>Tyto akce může provést pouze Nojby.</div>
-      <div className="adminActionRow" style={{marginTop:12}}>
+    <div className="card pad adminPanel">
+      <div className="adminActionRow">
         <button className="btn primary" disabled={busy || tournament.status === 'closed'} onClick={closeTournament}>Uzavřít turnaj</button>
-        <button className="btn danger" disabled={busy} onClick={() => setDeleteChoiceOpen((s) => !s)}>{deleteChoiceOpen ? 'Skrýt volby delete' : 'Delete / archivace'}</button>
+        <button className="btn danger" disabled={busy} onClick={() => setDeleteChoiceOpen((value) => !value)}>{deleteChoiceOpen ? 'Skrýt delete' : 'Delete / archivace'}</button>
       </div>
       {deleteChoiceOpen ? (
-        <div className="grid grid-2" style={{marginTop:12}}>
+        <div className="grid grid-2" style={{ marginTop: 12 }}>
           <button className="btn ghost" onClick={archiveTournament}>Archivovat turnaj</button>
           <button className="btn danger" onClick={deleteTournament}>Smazat natrvalo</button>
         </div>
@@ -308,34 +377,38 @@ export default function TournamentDetail({ params }) {
   const [user, setUser] = useState(null);
   const [tournament, setTournament] = useState(null);
   const [teams, setTeams] = useState([]);
-  const [tab, setTab] = useState('matches');
-  const [saveBusy, setSaveBusy] = useState(false);
   const [audit, setAudit] = useState([]);
-  const [syncLabel, setSyncLabel] = useState('Synchronizováno');
+  const [tab, setTab] = useState('matches');
   const [showParams, setShowParams] = useState(false);
+  const [selectedMatchId, setSelectedMatchId] = useState(null);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [syncLabel, setSyncLabel] = useState('Synchronizováno');
 
   async function loadTournament() {
     const data = await api(`/api/tournaments/${params.id}`);
     setTournament(data);
+    const firstOpen = data.matches.find((match) => !isMatchClosed(match));
+    setSelectedMatchId((current) => current || firstOpen?.id || data.matches[0]?.id || null);
   }
+
   async function loadTeams() {
     const data = await api('/api/teams');
     setTeams(data);
   }
+
   async function loadAudit() {
-    if (user?.name === 'Nojby') {
-      const data = await api(`/api/tournaments/${params.id}/audit`);
-      setAudit(data);
-    }
+    if (user?.name !== 'Nojby') return;
+    const data = await api(`/api/tournaments/${params.id}/audit`);
+    setAudit(data);
   }
 
   useEffect(() => {
-    const u = getUser();
-    if (!u) {
+    const currentUser = getUser();
+    if (!currentUser) {
       location.href = '/';
       return;
     }
-    setUser(u);
+    setUser(currentUser);
   }, []);
 
   useEffect(() => {
@@ -364,15 +437,15 @@ export default function TournamentDetail({ params }) {
   async function saveHeader() {
     setSaveBusy(true);
     try {
-      const result = await api(`/api/tournaments/${params.id}`, {
+      const updated = await api(`/api/tournaments/${params.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
           name: tournament.name,
           buyIn: tournament.buyIn,
-          players: tournament.players.map((p) => ({ id: p.id, name: p.name }))
+          players: tournament.players.map((player) => ({ id: player.id, name: player.name }))
         })
       });
-      setTournament(result);
+      setTournament(updated);
       await loadAudit();
     } catch (err) {
       alert(err.message);
@@ -381,42 +454,40 @@ export default function TournamentDetail({ params }) {
     }
   }
 
-  const kpis = useMemo(() => tournament ? [
-    { label: 'Bank', value: money(tournament.totalBank) },
-    { label: 'Top střelci', value: tournament.topScorers.join(', ') || '-' },
-    { label: 'Top obrana', value: tournament.topDefenses.join(', ') || '-' },
-  ] : [], [tournament]);
-
-  if (!tournament || !user) {
-    return <main className="page"><div className="shell"><div className="notice">Načítám turnaj…</div></div></main>;
-  }
-
-  const tabs = [
+  const tabs = useMemo(() => ([
     { key: 'matches', label: 'Zápasy' },
     { key: 'standings', label: 'Tabulka' },
     { key: 'finance', label: 'Finance' },
-    ...(user.name === 'Nojby' ? [{ key: 'audit', label: 'Audit' }] : [])
-  ];
-  const readOnly = tournament.status === 'closed';
+    ...(user?.name === 'Nojby' ? [{ key: 'audit', label: 'Audit' }] : [])
+  ]), [user]);
+
+  if (!user || !tournament) {
+    return <main className="page"><div className="shell"><div className="notice">Načítám turnaj…</div></div></main>;
+  }
+
+  const firstOpenIndex = tournament.matches.findIndex((match) => !isMatchClosed(match));
+  const currentEditableIndex = firstOpenIndex === -1 ? tournament.matches.length - 1 : firstOpenIndex;
+  const selectedMatch = tournament.matches.find((match) => match.id === selectedMatchId) || tournament.matches[0];
+  const canEditSelected = Boolean(
+    selectedMatch && (
+      (tournament.status !== 'closed' && tournament.matches.findIndex((match) => match.id === selectedMatch.id) === currentEditableIndex) ||
+      (tournament.status === 'closed' && user.name === 'Nojby')
+    )
+  );
 
   return (
     <main className="page">
       <button className="btn ghost logoutFloating" onClick={() => { clearSession(); location.href = '/'; }}>Odhlásit</button>
-
-      <div className="shell col">
-        <div className="row" style={{justifyContent:'space-between', paddingRight:'110px'}}>
-          <Link href="/" className="btn ghost" style={{width:'auto',padding:'0 14px'}}>← Zpět</Link>
+      <div className="shell col tournamentShellCompact">
+        <div className="row" style={{ justifyContent: 'space-between', paddingRight: '110px' }}>
+          <Link href="/" className="btn ghost" style={{ width: 'auto', padding: '0 14px' }}>← Zpět</Link>
           <span className={`badge statusBadge status-${tournament.status}`}>{syncLabel} • {tournament.status}</span>
         </div>
 
-        <div className="card pad">
-          <div className="row" style={{justifyContent:'space-between', alignItems:'flex-start'}}>
-            <div>
-              <div className="badge">Turnaj</div>
-              <div className="title" style={{marginTop:8, fontSize:'clamp(24px, 4vw, 38px)'}}>{tournament.name}</div>
-              <div className="subtitle">V horní liště máš rychlý přístup k zápasům, tabulce, financím a auditu. Parametry turnaje jsou schované níže.</div>
-            </div>
-            <button className="btn ghost" style={{width:'auto', padding:'0 16px'}} onClick={() => setShowParams((s) => !s)}>
+        <div className="card pad heroCompactCard">
+          <div className="heroCompactHeader">
+            <div className="title" style={{ fontSize: 'clamp(24px, 4vw, 38px)' }}>{tournament.name}</div>
+            <button className="btn ghost compactAction" onClick={() => setShowParams((value) => !value)}>
               {showParams ? 'Skrýt parametry turnaje' : 'Parametry turnaje'}
             </button>
           </div>
@@ -428,69 +499,64 @@ export default function TournamentDetail({ params }) {
           ))}
         </div>
 
-        <div className="grid grid-3">
-          {kpis.map((kpi) => <div key={kpi.label} className="kpi"><div className="label">{kpi.label}</div><div className="value">{kpi.value}</div></div>)}
-        </div>
-
-        {readOnly ? <div className="notice">Turnaj je uzavřený. Výsledky jsou propsané do Stats FC2026 a údaje už nelze upravovat.</div> : null}
-
-        {user.name === 'Nojby' ? (
-          <AdminActions
-            tournament={tournament}
-            busy={saveBusy}
-            onStatusChange={(updated) => setTournament(updated)}
-            onDeleted={() => { location.href = '/'; }}
-          />
-        ) : null}
-
         {showParams ? (
-          <div className="card pad collapsiblePanel">
+          <div className="card pad collapsiblePanel pageSectionBottomSpace">
             <div className="grid grid-2">
               <div>
                 <div className="small">Název turnaje</div>
-                <input disabled={readOnly} className="input" value={tournament.name} onChange={(e)=>setTournament((t)=>({...t, name:e.target.value}))} />
+                <input disabled={tournament.status === 'closed'} className="input" value={tournament.name} onChange={(e) => setTournament((current) => ({ ...current, name: e.target.value }))} />
               </div>
               <div>
                 <div className="small">Buy-in na hráče</div>
-                <input disabled={readOnly} className="input" type="number" value={tournament.buyIn} onChange={(e)=>setTournament((t)=>({...t, buyIn:e.target.value}))} />
+                <input disabled={tournament.status === 'closed'} className="input" type="number" value={tournament.buyIn} onChange={(e) => setTournament((current) => ({ ...current, buyIn: e.target.value }))} />
               </div>
             </div>
-            <div className="grid grid-3" style={{marginTop:12}}>
-              {tournament.players.slice().sort((a,b)=>a.slot.localeCompare(b.slot)).map((p) => (
-                <div key={p.id} className="teamBlock">
-                  <div className="small">Slot {p.slot}</div>
-                  <input disabled={readOnly} className="input" value={p.name} onChange={(e)=>setTournament((t)=>({...t, players: t.players.map((x)=>x.id===p.id?{...x, name:e.target.value}:x)}))} />
+            <div className="grid grid-3" style={{ marginTop: 12 }}>
+              {tournament.players.slice().sort((a, b) => a.slot.localeCompare(b.slot)).map((player) => (
+                <div key={player.id} className="teamBlock">
+                  <div className="small">Slot {player.slot}</div>
+                  <input disabled={tournament.status === 'closed'} className="input" value={player.name} onChange={(e) => setTournament((current) => ({ ...current, players: current.players.map((row) => row.id === player.id ? { ...row, name: e.target.value } : row) }))} />
                 </div>
               ))}
             </div>
-            {!readOnly ? <div className="footerBar"><button className="btn primary" onClick={saveHeader} disabled={saveBusy}>{saveBusy ? 'Ukládám…' : 'Uložit parametry turnaje'}</button></div> : null}
+            {user.name === 'Nojby' ? (
+              <div style={{ marginTop: 12 }}>
+                <AdminActions tournament={tournament} onStatusChange={setTournament} onDeleted={() => { location.href = '/'; }} />
+              </div>
+            ) : null}
+            {tournament.status !== 'closed' ? (
+              <div className="footerBar"><button className="btn primary" onClick={saveHeader} disabled={saveBusy}>{saveBusy ? 'Ukládám…' : 'Uložit parametry turnaje'}</button></div>
+            ) : null}
           </div>
         ) : null}
 
         {tab === 'matches' ? (
           <>
-            <div className="card pad">
-              <div style={{fontWeight:800, fontSize:20}}>Zápasy</div>
-              <div className="small" style={{marginTop:6}}>Na obrazovce je vždy otevřený jen nejbližší následující zápas. Jakmile ho vyplníš a uložíš, odemkne se další. Hotové zápasy se automaticky sbalí do stručného řádku.</div>
+            <div className="card pad matchListCard">
+              <div className="matchListGrid">
+                {tournament.matches.map((match, index) => {
+                  const closed = isMatchClosed(match);
+                  const isCurrent = !closed && index === currentEditableIndex;
+                  const isLocked = !closed && index > currentEditableIndex && tournament.status !== 'closed';
+                  const status = closed ? 'done' : isCurrent ? 'open' : 'locked';
+                  return (
+                    <MatchListRow
+                      key={match.id}
+                      label={`Zápas ${match.order}`}
+                      status={status}
+                      disabled={isLocked}
+                      active={selectedMatch?.id === match.id}
+                      onClick={() => setSelectedMatchId(match.id)}
+                    />
+                  );
+                })}
+              </div>
             </div>
-            <div className="grid pageSectionBottomSpace">
-              {(() => {
-                const firstOpenIndex = tournament.matches.findIndex((match) => !isMatchReady({
-                  scoreA: match.scoreA ?? '',
-                  scoreB: match.scoreB ?? '',
-                  auctionA: match.auctionA ?? 0,
-                  auctionB: match.auctionB ?? 0,
-                  footballTeamAId: match.footballTeamAId || '',
-                  footballTeamBId: match.footballTeamBId || '',
-                  overtimeWinner: match.overtimeWinner || ''
-                }));
-                return tournament.matches.map((match, index) => {
-                  const isLocked = !readOnly && firstOpenIndex !== -1 && index > firstOpenIndex;
-                  if (isLocked) return <LockedMatchCard key={match.id} match={match} previousOrder={tournament.matches[index - 1]?.order || match.order - 1} />;
-                  return <MatchCard key={match.id} match={match} teams={teams} readOnly={readOnly} onSaved={(data)=>setTournament(data)} />;
-                });
-              })()}
-            </div>
+            {selectedMatch ? <MatchDetail match={selectedMatch} teams={teams} canEdit={canEditSelected} onSaved={(updated, order) => {
+              setTournament(updated);
+              const nextMatch = updated.matches.find((match) => match.order === order + 1) || updated.matches.find((match) => match.order === order) || updated.matches[0];
+              setSelectedMatchId(nextMatch?.id || null);
+            }} /> : null}
           </>
         ) : null}
 
@@ -547,8 +613,8 @@ export default function TournamentDetail({ params }) {
           <div className="grid pageSectionBottomSpace">
             {audit.map((row) => (
               <div key={row.id} className="card pad">
-                <div className="row" style={{justifyContent:'space-between'}}>
-                  <div style={{fontWeight:800}}>{row.action} · {row.entityType}</div>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div style={{ fontWeight: 800 }}>{row.action} · {row.entityType}</div>
                   <div className="small">{new Date(row.createdAt).toLocaleString('cs-CZ')}</div>
                 </div>
                 <div className="small">Upravil: {row.changedBy}</div>
