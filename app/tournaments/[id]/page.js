@@ -97,6 +97,48 @@ function MatchListRow({ label, status, disabled, active, onClick }) {
   );
 }
 
+async function fileToOptimizedDataUrl(file) {
+  const originalDataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Fotku se nepodařilo načíst'));
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.readAsDataURL(file);
+  });
+
+  if (typeof window === 'undefined') return originalDataUrl;
+
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Fotku se nepodařilo otevřít'));
+      img.src = originalDataUrl;
+    });
+
+    const maxEdge = 1600;
+    const ratio = Math.min(1, maxEdge / Math.max(image.width || 1, image.height || 1));
+    const width = Math.max(1, Math.round((image.width || 1) * ratio));
+    const height = Math.max(1, Math.round((image.height || 1) * ratio));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return originalDataUrl;
+    ctx.drawImage(image, 0, 0, width, height);
+
+    let quality = 0.82;
+    let compressed = canvas.toDataURL('image/jpeg', quality);
+    const targetLength = 2_400_000;
+    while (compressed.length > targetLength && quality > 0.45) {
+      quality -= 0.1;
+      compressed = canvas.toDataURL('image/jpeg', quality);
+    }
+    return compressed;
+  } catch {
+    return originalDataUrl;
+  }
+}
+
 function MatchDetail({ match, teams, canEdit, onSaved }) {
   const inputRef = useRef(null);
   const [mode, setMode] = useState('manual');
@@ -175,24 +217,26 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
   async function handlePhotoSelection(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        setExtractBusy(true);
-        setMode('photo');
-        const payload = await api(`/api/matches/${match.id}/extract-teams`, {
-          method: 'POST',
-          body: JSON.stringify({ imageDataUrl: reader.result })
-        });
-        setPhotoResult(payload);
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        setExtractBusy(false);
-        if (inputRef.current) inputRef.current.value = '';
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      setExtractBusy(true);
+      setMode('photo');
+      const imageDataUrl = await fileToOptimizedDataUrl(file);
+      const payload = await api(`/api/matches/${match.id}/extract-teams`, {
+        method: 'POST',
+        body: JSON.stringify({ imageDataUrl })
+      });
+      setPhotoResult(payload);
+    } catch (err) {
+      const message = String(err?.message || 'Čtení týmů z fotky selhalo');
+      alert(
+        message.includes('OPENAI_API_KEY')
+          ? 'Foto rozpoznání na serveru není aktivní. Přidal jsem lepší chybový stav; teď prosím nasadit i nový server fix.'
+          : message
+      );
+    } finally {
+      setExtractBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
   }
 
   return (
