@@ -97,53 +97,38 @@ function MatchListRow({ label, status, disabled, active, onClick }) {
   );
 }
 
-async function fileToOptimizedDataUrl(file) {
-  const originalDataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Fotku se nepodařilo načíst'));
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.readAsDataURL(file);
-  });
-
-  if (typeof window === 'undefined') return originalDataUrl;
-
-  try {
-    const image = await new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Fotku se nepodařilo otevřít'));
-      img.src = originalDataUrl;
-    });
-
-    const maxEdge = 1600;
-    const ratio = Math.min(1, maxEdge / Math.max(image.width || 1, image.height || 1));
-    const width = Math.max(1, Math.round((image.width || 1) * ratio));
-    const height = Math.max(1, Math.round((image.height || 1) * ratio));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return originalDataUrl;
-    ctx.drawImage(image, 0, 0, width, height);
-
-    let quality = 0.82;
-    let compressed = canvas.toDataURL('image/jpeg', quality);
-    const targetLength = 2_400_000;
-    while (compressed.length > targetLength && quality > 0.45) {
-      quality -= 0.1;
-      compressed = canvas.toDataURL('image/jpeg', quality);
-    }
-    return compressed;
-  } catch {
-    return originalDataUrl;
+async function videoFrameToDataUrl(video) {
+  if (!video || !video.videoWidth || !video.videoHeight) {
+    throw new Error('Kamera ještě není připravená');
   }
+
+  const sourceWidth = video.videoWidth;
+  const sourceHeight = video.videoHeight;
+  const cropHeight = Math.max(1, Math.round(sourceHeight * 0.52));
+  const cropY = Math.max(0, Math.round((sourceHeight - cropHeight) / 2));
+
+  const maxWidth = 1280;
+  const ratio = Math.min(1, maxWidth / sourceWidth);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sourceWidth * ratio));
+  canvas.height = Math.max(1, Math.round(cropHeight * ratio));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Nepodařilo se připravit snímek z kamery');
+
+  ctx.drawImage(video, 0, cropY, sourceWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.82);
 }
 
 function MatchDetail({ match, teams, canEdit, onSaved }) {
-  const inputRef = useRef(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const scanIntervalRef = useRef(null);
+  const scanBusyRef = useRef(false);
   const [mode, setMode] = useState('manual');
   const [busy, setBusy] = useState(false);
   const [extractBusy, setExtractBusy] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraMessage, setCameraMessage] = useState('Namiř telefon na TV tak, aby byly oba názvy týmů uvnitř rámečku.');
   const [form, setForm] = useState({
     footballTeamAId: match.footballTeamAId || '',
     footballTeamBId: match.footballTeamBId || '',
@@ -172,6 +157,8 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
     setPhotoResult(null);
     setPhotoMessage(null);
     setMode('manual');
+    setCameraOpen(false);
+    setCameraMessage('Namiř telefon na TV tak, aby byly oba názvy týmů uvnitř rámečku.');
   }, [match]);
 
   const teamAPlayerNames = `${match.teamAPlayer1.name} + ${match.teamAPlayer2.name}`;
@@ -198,6 +185,103 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
   }
 
 
+
+function stopCamera() {
+  if (typeof window !== 'undefined' && scanIntervalRef.current) {
+    window.clearInterval(scanIntervalRef.current);
+    scanIntervalRef.current = null;
+  }
+  scanBusyRef.current = false;
+  const stream = streamRef.current;
+  if (stream) {
+    stream.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  }
+  if (videoRef.current) {
+    videoRef.current.srcObject = null;
+  }
+  setCameraOpen(false);
+  setExtractBusy(false);
+}
+
+async function scanCurrentFrame() {
+  if (scanBusyRef.current || !videoRef.current) return;
+  scanBusyRef.current = true;
+  try {
+    const imageDataUrl = await videoFrameToDataUrl(videoRef.current);
+    const payload = await api(`/api/matches/${match.id}/extract-teams`, {
+      method: 'POST',
+      body: JSON.stringify({ imageDataUrl })
+    });
+    stopCamera();
+    setPhotoResult(payload);
+    setPhotoMessage(payload.warning
+      ? { type: 'warning', text: payload.warning }
+      : { type: 'info', text: 'Zkontroluj vytěžené týmy a potvrď je.' });
+  } catch (err) {
+    const message = String(err?.message || 'Čtení týmů z kamery selhalo');
+    if (/nepodařilo přečíst oba týmy|zkus být blíž TV|kamera ještě není připravená/i.test(message)) {
+      setCameraMessage('Stále hledám dva týmy na TV obrazovce…');
+    } else {
+      stopCamera();
+      setPhotoResult(null);
+      setPhotoMessage({ type: 'error', text: message });
+      setMode('manual');
+    }
+  } finally {
+    scanBusyRef.current = false;
+  }
+}
+
+async function openCameraScanner() {
+  if (!canEdit) return;
+  if (!navigator?.mediaDevices?.getUserMedia) {
+    setPhotoMessage({ type: 'error', text: 'Tento prohlížeč nepodporuje kameru v mobilním webu.' });
+    return;
+  }
+
+  try {
+    setPhotoResult(null);
+    setPhotoMessage(null);
+    setMode('camera');
+    setExtractBusy(true);
+    setCameraMessage('Namiř telefon na TV tak, aby byly oba názvy týmů uvnitř rámečku.');
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    });
+    streamRef.current = stream;
+    setCameraOpen(true);
+    requestAnimationFrame(async () => {
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        try {
+          await videoRef.current.play();
+        } catch {}
+      }
+      setExtractBusy(false);
+      if (typeof window !== 'undefined') {
+        scanIntervalRef.current = window.setInterval(() => {
+          scanCurrentFrame();
+        }, 900);
+      }
+      scanCurrentFrame();
+    });
+  } catch (_err) {
+    stopCamera();
+    setMode('manual');
+    setPhotoMessage({ type: 'error', text: 'Kamera se nepodařila otevřít. Zkontroluj oprávnění pro foťák.' });
+  }
+}
+
+useEffect(() => () => {
+  stopCamera();
+}, []);
+
   async function saveMatch() {
     setBusy(true);
     try {
@@ -221,31 +305,6 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
     }
   }
 
-  async function handlePhotoSelection(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      setExtractBusy(true);
-      setMode('photo');
-      const imageDataUrl = await fileToOptimizedDataUrl(file);
-      const payload = await api(`/api/matches/${match.id}/extract-teams`, {
-        method: 'POST',
-        body: JSON.stringify({ imageDataUrl })
-      });
-      setPhotoResult(payload);
-      setPhotoMessage(payload.warning ? { type: 'warning', text: payload.warning } : { type: 'info', text: 'Zkontroluj vytěžené týmy a potvrď je.' });
-      if (payload.warning) {
-        console.warn('photo-extract-warning', payload.warning);
-      }
-    } catch (err) {
-      const message = String(err?.message || 'Čtení týmů z fotky selhalo');
-      setPhotoResult(null);
-      setPhotoMessage({ type: 'error', text: message });
-    } finally {
-      setExtractBusy(false);
-      if (inputRef.current) inputRef.current.value = '';
-    }
-  }
 
   return (
     <div className="card pad pageSectionBottomSpace matchDetailCard">
@@ -267,9 +326,8 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
           <div className="matchSidePlayers">{teamAPlayerNames}</div>
           <div className="modeActionRow">
             <button type="button" className={`segmentedBtn ${mode === 'manual' ? 'active' : ''}`} onClick={() => setMode('manual')} disabled={!canEdit}>Ručně</button>
-            <button type="button" className={`segmentedBtn ${mode === 'photo' ? 'active' : ''}`} onClick={() => { setMode('photo'); setPhotoResult(null); inputRef.current?.click(); }} disabled={!canEdit}>Foto</button>
+            <button type="button" className={`segmentedBtn ${mode === 'camera' ? 'active' : ''}`} onClick={openCameraScanner} disabled={!canEdit || extractBusy}>Skenovat kamerou</button>
           </div>
-          <input ref={inputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhotoSelection} />
           <TeamPicker
             teams={teams}
             competitionKey={form.competitionKeyA}
@@ -305,8 +363,28 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
         </div>
       </div>
 
+      {cameraOpen ? (
+        <div className="modalOverlay" role="dialog" aria-modal="true">
+          <div className="card cameraScannerModal">
+            <div className="photoConfirmHeader">
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 20 }}>Skenování z kamery</div>
+                <div className="small">Aplikace průběžně hledá dva týmy na TV obrazovce.</div>
+              </div>
+              <button type="button" className="btn ghost compactAction" onClick={stopCamera}>Zavřít</button>
+            </div>
+            <div className="cameraViewport">
+              <video ref={videoRef} autoPlay playsInline muted className="cameraVideo" />
+              <div className="cameraGuide">
+                <div className="cameraGuideLabel">Umísti názvy týmů do rámečku</div>
+              </div>
+            </div>
+            <div className="notice notice-info">{cameraMessage}</div>
+          </div>
+        </div>
+      ) : null}
       {photoMessage ? <div className={`notice notice-${photoMessage.type}`}>{photoMessage.text}</div> : null}
-      {extractBusy ? <div className="notice">Čtu fotku…</div> : null}
+      {extractBusy && !cameraOpen ? <div className="notice">Spouštím kameru…</div> : null}
       {photoResult ? (
         <div className="modalOverlay" role="dialog" aria-modal="true">
           <div className="card photoConfirmModal">
