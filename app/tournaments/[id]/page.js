@@ -128,6 +128,7 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [extractBusy, setExtractBusy] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
   const [cameraMessage, setCameraMessage] = useState('Namiř telefon na TV tak, aby byly oba názvy týmů uvnitř rámečku.');
   const [form, setForm] = useState({
     footballTeamAId: match.footballTeamAId || '',
@@ -158,6 +159,7 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
     setPhotoMessage(null);
     setMode('manual');
     setCameraOpen(false);
+    setCameraReady(false);
     setCameraMessage('Namiř telefon na TV tak, aby byly oba názvy týmů uvnitř rámečku.');
   }, [match]);
 
@@ -198,8 +200,10 @@ function stopCamera() {
     streamRef.current = null;
   }
   if (videoRef.current) {
+    try { videoRef.current.pause(); } catch {}
     videoRef.current.srcObject = null;
   }
+  setCameraReady(false);
   setCameraOpen(false);
   setExtractBusy(false);
 }
@@ -241,11 +245,15 @@ async function openCameraScanner() {
   }
 
   try {
+    stopCamera();
     setPhotoResult(null);
     setPhotoMessage(null);
     setMode('camera');
     setExtractBusy(true);
-    setCameraMessage('Namiř telefon na TV tak, aby byly oba názvy týmů uvnitř rámečku.');
+    setCameraOpen(true);
+    setCameraReady(false);
+    setCameraMessage('Spouštím kameru…');
+
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
@@ -255,22 +263,65 @@ async function openCameraScanner() {
       }
     });
     streamRef.current = stream;
-    setCameraOpen(true);
-    requestAnimationFrame(async () => {
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+
+    let attempts = 0;
+    const attachAndPlay = async () => {
+      const video = videoRef.current;
+      if (!video) {
+        if (attempts < 20) {
+          attempts += 1;
+          window.setTimeout(attachAndPlay, 50);
+        }
+        return;
+      }
+
+      video.muted = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.setAttribute('muted', '');
+      video.setAttribute('autoplay', '');
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('webkit-playsinline', 'true');
+      video.srcObject = stream;
+
+      const markReady = async () => {
+        setCameraReady(true);
+        setCameraMessage('Namiř telefon na TV tak, aby byly oba názvy týmů uvnitř rámečku.');
         try {
-          await videoRef.current.play();
+          await video.play();
         } catch {}
-      }
-      setExtractBusy(false);
-      if (typeof window !== 'undefined') {
-        scanIntervalRef.current = window.setInterval(() => {
-          scanCurrentFrame();
-        }, 900);
-      }
-      scanCurrentFrame();
-    });
+        setExtractBusy(false);
+        if (typeof window !== 'undefined' && !scanIntervalRef.current) {
+          scanIntervalRef.current = window.setInterval(() => {
+            scanCurrentFrame();
+          }, 900);
+        }
+        scanCurrentFrame();
+      };
+
+      video.onloadedmetadata = () => {
+        markReady();
+      };
+
+      try {
+        await video.play();
+      } catch {}
+
+      window.setTimeout(async () => {
+        if (!video.videoWidth || !video.videoHeight) {
+          try {
+            await video.play();
+          } catch {}
+          if (!video.videoWidth || !video.videoHeight) {
+            setCameraMessage('Kamera je povolená, ale náhled se ještě nenačetl. Zkus chvíli počkat nebo kameru zavřít a otevřít znovu.');
+          }
+        } else {
+          markReady();
+        }
+      }, 800);
+    };
+
+    attachAndPlay();
   } catch (_err) {
     stopCamera();
     setMode('manual');
@@ -374,12 +425,12 @@ useEffect(() => () => {
               <button type="button" className="btn ghost compactAction" onClick={stopCamera}>Zavřít</button>
             </div>
             <div className="cameraViewport">
-              <video ref={videoRef} autoPlay playsInline muted className="cameraVideo" />
+              <video ref={videoRef} autoPlay playsInline muted webkit-playsinline="true" className="cameraVideo" />
               <div className="cameraGuide">
                 <div className="cameraGuideLabel">Umísti názvy týmů do rámečku</div>
               </div>
             </div>
-            <div className="notice notice-info">{cameraMessage}</div>
+            <div className={`notice ${cameraReady ? 'notice-success' : 'notice-info'}`}>{cameraReady ? 'Kamera je aktivní. ' : ''}{cameraMessage}</div>
           </div>
         </div>
       ) : null}
