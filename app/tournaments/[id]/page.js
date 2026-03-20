@@ -170,10 +170,7 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
       overtimeWinner: match.overtimeWinner || ''
     });
     setPhotoResult(null);
-    setPhotoMessage({
-      type: 'success',
-      text: `Týmy z fotky byly doplněny: ${homeTeam?.name || payload.rawHomeTeam || 'Domácí'} vs ${awayTeam?.name || payload.rawAwayTeam || 'Hosté'}.`
-    });
+    setPhotoMessage(null);
     setMode('manual');
   }, [match]);
 
