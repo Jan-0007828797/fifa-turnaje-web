@@ -639,6 +639,13 @@ export default function TournamentDetail({ params }) {
           </div>
         </div>
 
+        {user.name === 'Nojby' ? (
+          <div className="card pad adminPanel pageSectionBottomSpace">
+            <div className="small" style={{ marginBottom: 10, fontWeight: 800 }}>Správa turnaje</div>
+            <AdminActions tournament={tournament} onStatusChange={setTournament} onDeleted={() => { location.href = '/'; }} />
+          </div>
+        ) : null}
+
         <div className="topTabBar card">
           {tabs.map((item) => (
             <button key={item.key} className={`tab ${tab === item.key ? 'active' : ''}`} onClick={() => setTab(item.key)}>{item.label}</button>
@@ -664,13 +671,7 @@ export default function TournamentDetail({ params }) {
                   <input disabled={tournament.status === 'closed'} className="input" value={player.name} onChange={(e) => setTournament((current) => ({ ...current, players: current.players.map((row) => row.id === player.id ? { ...row, name: e.target.value } : row) }))} />
                 </div>
               ))}
-            </div>
-            {user.name === 'Nojby' ? (
-              <div style={{ marginTop: 12 }}>
-                <AdminActions tournament={tournament} onStatusChange={setTournament} onDeleted={() => { location.href = '/'; }} />
-              </div>
-            ) : null}
-            {tournament.status !== 'closed' ? (
+            </div>            {tournament.status !== 'closed' ? (
               <div className="footerBar"><button className="btn primary" onClick={saveHeader} disabled={saveBusy}>{saveBusy ? 'Ukládám…' : 'Uložit parametry turnaje'}</button></div>
             ) : null}
           </div>
