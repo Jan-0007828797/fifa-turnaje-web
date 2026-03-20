@@ -155,6 +155,7 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
     scoreB: Number(match.scoreB || 0)
   });
   const [photoResult, setPhotoResult] = useState(null);
+  const [photoMessage, setPhotoMessage] = useState(null);
 
   useEffect(() => {
     setForm({
@@ -169,6 +170,10 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
       overtimeWinner: match.overtimeWinner || ''
     });
     setPhotoResult(null);
+    setPhotoMessage({
+      type: 'success',
+      text: `Týmy z fotky byly doplněny: ${homeTeam?.name || payload.rawHomeTeam || 'Domácí'} vs ${awayTeam?.name || payload.rawAwayTeam || 'Hosté'}.`
+    });
     setMode('manual');
   }, [match]);
 
@@ -188,8 +193,13 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
       competitionKeyB: getCompetitionKey(awayTeam) || current.competitionKeyB
     }));
     setPhotoResult(null);
+    setPhotoMessage({
+      type: 'success',
+      text: `Týmy z fotky byly doplněny: ${homeTeam?.name || payload.rawHomeTeam || 'Domácí'} vs ${awayTeam?.name || payload.rawAwayTeam || 'Hosté'}.`
+    });
     setMode('manual');
   }
+
 
   async function saveMatch() {
     setBusy(true);
@@ -226,12 +236,14 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
         body: JSON.stringify({ imageDataUrl })
       });
       setPhotoResult(payload);
+      setPhotoMessage(payload.warning ? { type: 'warning', text: payload.warning } : { type: 'info', text: 'Zkontroluj vytěžené týmy a potvrď je.' });
       if (payload.warning) {
         console.warn('photo-extract-warning', payload.warning);
       }
     } catch (err) {
       const message = String(err?.message || 'Čtení týmů z fotky selhalo');
-      alert(message);
+      setPhotoResult(null);
+      setPhotoMessage({ type: 'error', text: message });
     } finally {
       setExtractBusy(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -296,34 +308,47 @@ function MatchDetail({ match, teams, canEdit, onSaved }) {
         </div>
       </div>
 
+      {photoMessage ? <div className={`notice notice-${photoMessage.type}`}>{photoMessage.text}</div> : null}
       {extractBusy ? <div className="notice">Čtu fotku…</div> : null}
       {photoResult ? (
-        <div className="card photoConfirmCard">
-          <div className="photoConfirmHeader">
-            <div>
-              <div style={{ fontWeight: 800 }}>Potvrdit týmy</div>
-              <div className="small">Zdroj: {photoResult.source === 'ai' ? 'AI + katalog' : 'Lokální OCR + katalog'}</div>
+        <div className="modalOverlay" role="dialog" aria-modal="true">
+          <div className="card photoConfirmModal">
+            <div className="photoConfirmHeader">
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 20 }}>Potvrdit týmy z fotky</div>
+                <div className="small">Zdroj: {photoResult.source === 'ai' ? 'AI + katalog' : 'Lokální OCR + katalog'}</div>
+              </div>
+              <button type="button" className="btn ghost compactAction" onClick={() => setPhotoResult(null)}>Zavřít</button>
             </div>
-            <button type="button" className="btn ghost compactAction" onClick={() => setPhotoResult(null)}>Zavřít</button>
-          </div>
-          <div className="grid grid-2">
-            <div>
-              <div className="fieldLabel">Domácí</div>
-              <select className="select" value={photoResult.homeTeamId || ''} onChange={(e) => setPhotoResult((current) => ({ ...current, homeTeamId: e.target.value }))}>
-                <option value="">Vyber tým</option>
-                {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-              </select>
+
+            <div className="notice notice-info">
+              Zkontroluj rozpoznané týmy. Po potvrzení se propíšou přímo do tohoto zápasu.
             </div>
-            <div>
-              <div className="fieldLabel">Hosté</div>
-              <select className="select" value={photoResult.awayTeamId || ''} onChange={(e) => setPhotoResult((current) => ({ ...current, awayTeamId: e.target.value }))}>
-                <option value="">Vyber tým</option>
-                {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-              </select>
+            {photoResult.warning ? <div className="notice notice-warning">{photoResult.warning}</div> : null}
+
+            <div className="grid grid-2">
+              <div>
+                <div className="fieldLabel">Domácí</div>
+                <div className="small" style={{ marginBottom: 6 }}>Rozpoznáno: {photoResult.rawHomeTeam || '—'}</div>
+                <select className="select" value={photoResult.homeTeamId || ''} onChange={(e) => setPhotoResult((current) => ({ ...current, homeTeamId: e.target.value }))}>
+                  <option value="">Vyber tým</option>
+                  {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <div className="fieldLabel">Hosté</div>
+                <div className="small" style={{ marginBottom: 6 }}>Rozpoznáno: {photoResult.rawAwayTeam || '—'}</div>
+                <select className="select" value={photoResult.awayTeamId || ''} onChange={(e) => setPhotoResult((current) => ({ ...current, awayTeamId: e.target.value }))}>
+                  <option value="">Vyber tým</option>
+                  {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                </select>
+              </div>
             </div>
-          </div>
-          <div className="footerBar">
-            <button type="button" className="btn primary" disabled={!photoResult.homeTeamId || !photoResult.awayTeamId} onClick={() => applyDetectedTeams(photoResult)}>Použít týmy</button>
+
+            <div className="modalActionRow">
+              <button type="button" className="btn ghost" onClick={() => setPhotoResult(null)}>Upravit ručně</button>
+              <button type="button" className="btn primary" disabled={!photoResult.homeTeamId || !photoResult.awayTeamId} onClick={() => applyDetectedTeams(photoResult)}>Potvrdit a propsat</button>
+            </div>
           </div>
         </div>
       ) : null}
