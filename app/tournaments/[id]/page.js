@@ -81,7 +81,7 @@ function TeamPicker({ teams, competitionKey, selectedTeamId, onCompetitionChange
         {competitionChoices.map((choice) => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
       </select>
       <select disabled={disabled} className="select" value={selectedTeamId} onChange={(e) => onTeamChange(e.target.value)}>
-        <option value="">Vyber tým</option>
+        <option value="" disabled>Vyber tým</option>
         {filteredTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
       </select>
     </div>
@@ -334,6 +334,18 @@ useEffect(() => () => {
 }, []);
 
   async function saveMatch() {
+    if (!form.footballTeamAId || !form.footballTeamBId) {
+      setPhotoMessage({ type: 'error', text: 'Vyber oba týmy, jinak zápas nelze uložit.' });
+      return;
+    }
+    if (form.footballTeamAId === form.footballTeamBId) {
+      setPhotoMessage({ type: 'error', text: 'Na obou stranách zápasu nemůže být stejný tým.' });
+      return;
+    }
+    if (Number(form.scoreA) === Number(form.scoreB) && !form.overtimeWinner) {
+      setPhotoMessage({ type: 'error', text: 'Při remíze zvol vítěze prodloužení.' });
+      return;
+    }
     setBusy(true);
     try {
       const result = await api(`/api/matches/${match.id}`, {
@@ -457,7 +469,7 @@ useEffect(() => () => {
                 <div className="fieldLabel">Domácí</div>
                 <div className="small" style={{ marginBottom: 6 }}>Rozpoznáno: {photoResult.rawHomeTeam || '—'}</div>
                 <select className="select" value={photoResult.homeTeamId || ''} onChange={(e) => setPhotoResult((current) => ({ ...current, homeTeamId: e.target.value }))}>
-                  <option value="">Vyber tým</option>
+                  <option value="" disabled>Vyber tým</option>
                   {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
                 </select>
               </div>
@@ -465,7 +477,7 @@ useEffect(() => () => {
                 <div className="fieldLabel">Hosté</div>
                 <div className="small" style={{ marginBottom: 6 }}>Rozpoznáno: {photoResult.rawAwayTeam || '—'}</div>
                 <select className="select" value={photoResult.awayTeamId || ''} onChange={(e) => setPhotoResult((current) => ({ ...current, awayTeamId: e.target.value }))}>
-                  <option value="">Vyber tým</option>
+                  <option value="" disabled>Vyber tým</option>
                   {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
                 </select>
               </div>
